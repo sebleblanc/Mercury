@@ -1,4 +1,4 @@
-import time, pywapi, json, string, threading, csv, datetime
+import time, pywapi, json, string, threading, csv, datetime, os, signal, sys
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 from rotary_class import RotaryEncoder
@@ -22,6 +22,10 @@ GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(speaker, GPIO.OUT)
 
+# Start char LCD
+mylcd = i2c_charLCD.lcd()
+mylcd.backlight(1)
+
 # Start PWM speaker
 p = GPIO.PWM(speaker, 600) 
 p.start(0)
@@ -30,16 +34,24 @@ p.start(0)
 # Initialiaze variables
 now = datetime.datetime.now()
 uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0
+run,toggledisplay = True,True
 htrstate = ['Off', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
 lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
 
 # Defaults
-target_temp = 20.8      # in celsius
+target_temp = 18.8      # in celsius
 temp_tolerance = 0.8	#
 refreshrate = 0.1	# in seconds
 
 # todo - Load saved data 
+
+# OS signal handler
+def handler_stop_signals(signum, frame):
+    global run
+    run = False
+signal.signal(signal.SIGINT, handler_stop_signals)
+signal.signal(signal.SIGTERM, handler_stop_signals)
 
 def playtone(tone):
   if tone == 1:
@@ -113,7 +125,8 @@ def htrtoggle(state):
         GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.LOW)
         htrstatus = htrstate[2]
-    print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
+    if lhs[1] != htrstatus:
+      print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
 
 
 def thermostat():
@@ -144,9 +157,9 @@ def thermostat():
           if stemp + (stemp - lasttemp) >= target_temp:		# project temperature increase to see if we are 5 min away from target temperature
             htrtoggle(1)
       elif htrstatus == htrstate[0]:
-        if stemp < target_temp - temp_tolerance:		# Turn on at full heat for at least 2 minutes
+        if stemp < target_temp - temp_tolerance:		# Turn on at full heat for at least 10 seconds
           htrtoggle(2)
-          time.sleep(120)
+          time.sleep(10)
       time.sleep(1)
  
 
@@ -161,22 +174,15 @@ def drawstatus():
        sensortemp = stemp
 
     if latest_weather == 0:
-      for i in range(0,4):
-        time.sleep(3)
-        print ("waiting for external weather info...")
-        if latest_weather != 0:
-          break
-
-    if latest_weather == 0:
       outtemp = '---' + chr(223) +"C"
       cc = "N/A"
       outhumidity = "---%"
-    
-   
-    outtempraw = int(latest_weather['current_conditions'] ['temperature'])
-    outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
-    cc = latest_weather['current_conditions']['text']
-    outhumidity = latest_weather['current_conditions']['humidity'] + "%"
+    else:
+      outtempraw = int(latest_weather['current_conditions'] ['temperature'])
+      outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
+      cc = latest_weather['current_conditions']['text']
+      outhumidity = latest_weather['current_conditions']['humidity'] + "%"
+
     date = time.strftime("%d/%m/%Y")
     sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
     sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
@@ -229,21 +235,29 @@ def drawweather():
 def redraw():
     global uimode
     while True:
+      if not toggledisplay:
+        mylcd.lcd_clear()
+        mylcd.backlight(0)
+        return
       if uimode == 0:
         drawstatus()
       else:
         drawweather()
       time.sleep(refreshrate)
-        
+    
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
       global uimode
+
       if uimode == 0:
         global target_temp
+        tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
+
         if event == 1:
             target_temp = target_temp + 0.1
             playtone(1)
+
         elif event == 2:
             target_temp = target_temp - 0.1
             playtone(2)
@@ -287,26 +301,31 @@ def switch_event(event):
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 weatherthread = threading.Thread(target=getweather)
-sensorthread = threading.Thread(target=smoothsensordata,args=(2,5))
+sensorthread = threading.Thread(target=smoothsensordata, args=(2,5))
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
+
+weatherthread.setDaemon(True)
+sensorthread.setDaemon(True)
+thermostatthread.setDaemon(True)
+#displaythread.setDaemon(True)
 
 weatherthread.start()
 sensorthread.start()
 thermostatthread.start()
 displaythread.start()
 
-mylcd = i2c_charLCD.lcd()
-mylcd.backlight(1)
-
 try:
-  while True:
-    time.sleep(5)
-      
-except:
-  GPIO.cleanup()
-  p.stop()
-  weatherthread.stop()
-  sensorthread.stop()
-  thermostatthread.stop()
-  displaythread.stop()
+  while run:
+    time.sleep(1)
+    pass  
+except KeyboardInterrupt:
+    pass
+finally:
+    toggledisplay=False
+    displaythread.join()
+    GPIO.cleanup()
+    p.stop()
+    print(datetime.datetime.now(), " program exited cleanly")
+
+
