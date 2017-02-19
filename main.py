@@ -19,10 +19,10 @@ GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 
 # Initialiaze variables
-uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0
+redraw_timer,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0
 # Defaults
 target_temp=20
-
+refreshrate=3
 
 def getweather():  
 # Get weather from weather API
@@ -94,7 +94,13 @@ def drawweather():
     mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 4)
     return
 
-
+def redraw():
+    global uimode
+    if uimode == 0:
+      drawstatus()
+    else:
+      drawweather()
+    return
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
@@ -122,7 +128,7 @@ def rotaryevent(event):
 
 # This is the event callback routine to handle events
 def switch_event(event):
-        global uimode
+        global uimode,redraw_timer
         if event == RotaryEncoder.CLOCKWISE:
             rotaryevent(1)
         elif event == RotaryEncoder.ANTICLOCKWISE:
@@ -134,6 +140,7 @@ def switch_event(event):
               uimode = 0
         elif event == RotaryEncoder.BUTTONUP:
             print ()
+        redraw_timer=0 
         return
 
 # Define the switch
@@ -149,12 +156,14 @@ mylcd.backlight(1)
 
 try:
   while 1:
-    if uimode == 0:
-      drawstatus()
+    sleeptime=0.05
+    if redraw_timer <= 0:
+        redraw()
+        redraw_timer = refreshrate
     else:
-      drawweather()
-    time.sleep(0.8)
-
+      time.sleep(sleeptime)
+      redraw_timer = redraw_timer - sleeptime
+      
 except KeyboardInterrupt:
   weatherthread.stop()
   sensorthread.stop()
