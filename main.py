@@ -1,4 +1,4 @@
-import time,pywapi,json,string,threading
+import time, pywapi, json, string, threading, csv
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 from rotary_class import RotaryEncoder
@@ -19,10 +19,13 @@ GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 
 # Initialiaze variables
-redraw_timer,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0
+extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
+htrstate = "Off"
+
 # Defaults
-target_temp=20
-refreshrate=3
+target_temp = 20        # in celsius
+temp_tolerance = 1	#
+refreshrate = 0.1		# in seconds
 
 def getweather():  
 # Get weather from weather API
@@ -43,9 +46,38 @@ def smoothsensordata(samples,refresh):
         time.sleep(refresh/samples)
       stemp,spressure,shumidity=t/samples,p/samples,h/samples
 
+def externalsensordata():
+    global extemp, expressure
+    while True:
+        with open('plutolatest.csv') as csvfile:
+           reader = csv.DictReader(csvfile)
+           for row in reader:
+              extemp,expressure = row['temp'], row['pressure']
+    time.sleep(3)
+                                      # todo: compare timestamps
+        
+def htrtoggle(state):
+    global htrstate
+    if state == 0:
+        GPIO.output(relay1, GPIO.LOW)
+        htrstate = "Off"
+    elif state == 1:
+        GPIO.output(relay1, GPIO.HIGH)
+        htrstate = "Heat"
+
+def thermostat():
+    global target_temp, stemp, extemp, temp_tolerance
+    while True:
+      watchtemp = stemp
+      if watchtemp < target_temp - temp_tolerance:
+           htrtoggle(1)        
+      if watchtemp > target_temp + temp_tolerance:
+           htrtoggle(0)
+      time.sleep(3)
+
 def drawstatus():
 # Draw mode 0 (status screen)
-    global latest_weather, stemp, shumidity, target_temp
+    global latest_weather, stemp, shumidity, target_temp, htrstate, extemp
     localtime = time.asctime(time.localtime(time.time()))
     
     while latest_weather == 0:
@@ -58,13 +90,14 @@ def drawstatus():
     outhumidity = latest_weather['current_conditions']['humidity'] + "%"
     date = time.strftime("%d/%m/%Y")
     sensortemp = '{0:.1f}'.format(stemp) + chr(223) + "C"
+#    exsensortemp = (extemp) + chr(223) + "C"
     sensorhumidity = '{0:.1f}'.format(shumidity) + "%"
     tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
 
-    print ("(re)drawing status screen")
-    mylcd.lcd_display_string(date.ljust(10) + localtime[-13:-8].rjust(10),1)
+    mylcd.lcd_display_string(htrstate.ljust(10) + localtime[-13:-8].rjust(10),1)
     mylcd.lcd_display_string(tt.center(20), 2)
     mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 3)
+#    mylcd.lcd_display_string(exsensortemp.ljust(10) + outtemp.rjust(10), 3)
     mylcd.lcd_display_string(sensorhumidity.ljust(10) + outhumidity.rjust(10), 4)
     return
 
@@ -87,7 +120,6 @@ def drawweather():
     low = latest_weather['forecasts'][forecast_day]['low'] + chr(223) + "C"
     sensortemp = '{0:.1f}'.format(stemp) + chr(223) + "C"
 
-    print ("(re)drawing weather screen")
     mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6) +"  " + localtime[-13:-8].rjust(8))
     mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
     mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
@@ -96,11 +128,13 @@ def drawweather():
 
 def redraw():
     global uimode
-    if uimode == 0:
-      drawstatus()
-    else:
-      drawweather()
-    return
+    while True:
+      if uimode == 0:
+        drawstatus()
+      else:
+        drawweather()
+      time.sleep(refreshrate)
+        
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
@@ -128,7 +162,7 @@ def rotaryevent(event):
 
 # This is the event callback routine to handle events
 def switch_event(event):
-        global uimode,redraw_timer
+        global uimode
         if event == RotaryEncoder.CLOCKWISE:
             rotaryevent(1)
         elif event == RotaryEncoder.ANTICLOCKWISE:
@@ -140,34 +174,34 @@ def switch_event(event):
               uimode = 0
         elif event == RotaryEncoder.BUTTONUP:
             print ()
-        redraw_timer=0 
         return
 
 # Define the switch
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 weatherthread = threading.Thread(target=getweather)
-sensorthread = threading.Thread(target=smoothsensordata,args=(2,10))
+sensorthread = threading.Thread(target=smoothsensordata,args=(2,5))
+externalsensorthread = threading.Thread(target=externalsensordata)
+thermostatthread = threading.Thread(target=thermostat)
+displaythread = threading.Thread(target=redraw)
 
 weatherthread.start()
 sensorthread.start()
+#externalsensorthread.start()
+thermostatthread.start()
+displaythread.start()
+
 mylcd = i2c_charLCD.lcd()
 mylcd.backlight(1)
 
 try:
-  while 1:
-    sleeptime=0.05
-    if redraw_timer <= 0:
-        redraw()
-        redraw_timer = refreshrate
-    else:
-      time.sleep(sleeptime)
-      redraw_timer = redraw_timer - sleeptime
+  while True:
+    time.sleep(5)
       
 except KeyboardInterrupt:
+  GPIO.cleanup()
   weatherthread.stop()
   sensorthread.stop()
-  GPIO.cleanup()
-GPIO.cleanup()
-weatherthread.stop()
-sensorthread.stop()
+  externalsensorthread.stop()
+  thermostatthread.stop()
+  displaythread.stop()
