@@ -16,9 +16,13 @@ GPIO.setmode(GPIO.BOARD)
 GPIO.setup(relay1, GPIO.OUT, initial=GPIO.LOW)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
+GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 
 # Initialiaze variables
 uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0
+# Defaults
+target_temp=20
+
 
 def getweather():  
 # Get weather from weather API
@@ -39,8 +43,33 @@ def smoothsensordata(samples,refresh):
         time.sleep(refresh/samples)
       stemp,spressure,shumidity=t/samples,p/samples,h/samples
 
+def drawstatus():
+# Draw mode 0 (status screen)
+    global latest_weather, stemp, shumidity, target_temp
+    localtime = time.asctime(time.localtime(time.time()))
+    
+    while latest_weather == 0:
+      print ("waiting for external weather info")
+      time.sleep(1)
+   
+    outtempraw = int(latest_weather['current_conditions'] ['temperature'])
+    outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
+    cc = latest_weather['current_conditions']['text']
+    outhumidity = latest_weather['current_conditions']['humidity'] + "%"
+    date = time.strftime("%d/%m/%Y")
+    sensortemp = '{0:.1f}'.format(stemp) + chr(223) + "C"
+    sensorhumidity = '{0:.1f}'.format(shumidity) + "%"
+    tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
+
+    print ("(re)drawing status screen")
+    mylcd.lcd_display_string(date.ljust(10) + localtime[-13:-8].rjust(10),1)
+    mylcd.lcd_display_string(tt.center(20), 2)
+    mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 3)
+    mylcd.lcd_display_string(sensorhumidity.ljust(10) + outhumidity.rjust(10), 4)
+    return
+
 def drawweather():
-# Define mode 1 (weather screen)
+# Draw mode 1 (weather screen)
     global latest_weather,forecast_day,stemp
     localtime = time.asctime(time.localtime(time.time()))
     
@@ -60,10 +89,11 @@ def drawweather():
 
     print ("(re)drawing weather screen")
     mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6) +"  " + localtime[-13:-8].rjust(8))
-    mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(9), 2)
-    mylcd.lcd_display_string(high.center(9) + "|" + low.center(9), 3)
+    mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
+    mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
     mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 4)
     return
+
 
 
 # Define rotary actions depending on current mode
@@ -72,13 +102,9 @@ def rotaryevent(event):
       if uimode == 0:
         global target_temp
         if event == 1:
-            print ()
+            target_temp = target_temp + 0.1
         elif event == 2:
-            print ()
-        elif event == 3:
-            print ()
-        elif event == 4:
-            print ()
+            target_temp = target_temp - 0.1
 
       elif uimode == 1:
         global forecast_day
@@ -92,40 +118,43 @@ def rotaryevent(event):
               forecast_day = forecast_day - 1
             if forecast_day < 0:
               forecast_day = 0 
-        elif event == 3:
-            print ()
-        elif event == 4:
-            print ()
       return
 
 # This is the event callback routine to handle events
 def switch_event(event):
+        global uimode
         if event == RotaryEncoder.CLOCKWISE:
-          rotaryevent(1)
+            rotaryevent(1)
         elif event == RotaryEncoder.ANTICLOCKWISE:
-          rotaryevent(2)
+            rotaryevent(2)
         elif event == RotaryEncoder.BUTTONDOWN:
-          rotaryevent(3)
+            if uimode == 0:
+              uimode = 1
+            else:
+              uimode = 0
         elif event == RotaryEncoder.BUTTONUP:
-          rotaryevent(4)
+            print ()
         return
 
 # Define the switch
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 weatherthread = threading.Thread(target=getweather)
-sensorthread = threading.Thread(target=smoothsensordata,args=(5,30))
+sensorthread = threading.Thread(target=smoothsensordata,args=(2,10))
 
 weatherthread.start()
 sensorthread.start()
 mylcd = i2c_charLCD.lcd()
 mylcd.backlight(1)
 
-
 try:
   while 1:
-
+    if uimode == 0:
+      drawstatus()
+    else:
+      drawweather()
     time.sleep(0.8)
+
 except KeyboardInterrupt:
   weatherthread.stop()
   sensorthread.stop()
