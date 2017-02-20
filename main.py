@@ -23,9 +23,11 @@ extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity =
 htrstate = "Off"
 
 # Defaults
-target_temp = 20        # in celsius
+target_temp = 21        # in celsius
 temp_tolerance = 1	#
-refreshrate = 0.1		# in seconds
+refreshrate = 0.1	# in seconds
+
+# todo - Load saved data 
 
 def getweather():  
 # Get weather from weather API
@@ -158,6 +160,7 @@ def rotaryevent(event):
               forecast_day = forecast_day - 1
             if forecast_day < 0:
               forecast_day = 0 
+      print ("fd: ", forecast_day, end="\r")
       return
 
 # This is the event callback routine to handle events
