@@ -170,12 +170,12 @@ def switch_event(event):
             rotaryevent(1)
         elif event == RotaryEncoder.ANTICLOCKWISE:
             rotaryevent(2)
-        elif event == RotaryEncoder.BUTTONDOWN:
+        elif event == RotaryEncoder.BUTTONUP:
             if uimode == 0:
               uimode = 1
             else:
               uimode = 0
-        elif event == RotaryEncoder.BUTTONUP:
+        elif event == RotaryEncoder.BUTTONDOWN:
             print ()
         return
 

@@ -1,209 +1,111 @@
+#!/usr/bin/python
+#-------------------------------------------------------------------------------
+# FileName:     Rotary_Encoder-1a.py
+# Purpose:      This program decodes a rotary encoder switch.
+#
 
-#!/usr/bin/env python
 #
-# Raspberry Pi Rotary Encoder Class
-# $Id: rotary_class.py,v 1.2 2014/01/31 13:34:48 bob Exp $
+# Note:         All dates are in European format DD-MM-YY[YY]
 #
-# Author : Bob Rathbone
-# Site   : http://www.bobrathbone.com
+# Author:       Paul Versteeg
 #
-# This class uses standard rotary encoder with push switch
-# 
+# Created:      23-Nov-2015
 #
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>
+#-------------------------------------------------------------------------------
 
 import RPi.GPIO as GPIO
+from time import sleep
 
 class RotaryEncoder:
+  
+  CLOCKWISE=1
+  ANTICLOCKWISE=2
+  BUTTONDOWN=3
+  BUTTONUP=4
 
-	CLOCKWISE=1
-	ANTICLOCKWISE=2
-	BUTTONDOWN=3
-	BUTTONUP=4
+  # GPIO Ports
 
-	rotary_a = 0
-	rotary_b = 0
-	rotary_c = 0
-	last_state = 0
-	direction = 0
+  def __init__(self,pinA,pinB,button,callback):
+    
+    self.pinA = pinA
+    self.pinB = pinB
+    self.button = button
+    self.callback = callback    
 
-	# Initialise rotary encoder object
-	def __init__(self,pinA,pinB,button,callback):
-		self.pinA = pinA
-		self.pinB = pinB
-		self.button = button
-		self.callback = callback
+    GPIO.setwarnings(True)
 
-		GPIO.setmode(GPIO.BOARD)
-		
-		# The following lines enable the internal pull-up resistors
-		# on version 2 (latest) boards
-		GPIO.setwarnings(False)
-		GPIO.setup(self.pinA, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-		GPIO.setup(self.pinB, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-		GPIO.setup(self.button, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+    # Use the Raspberry Pi BOARD pins
+    GPIO.setmode(GPIO.BOARD)
 
-		# For version 1 (old) boards comment out the above four lines
-		# and un-comment the following 3 lines
-		#GPIO.setup(self.pinA, GPIO.IN)
-		#GPIO.setup(self.pinB, GPIO.IN)
-		#GPIO.setup(self.button, GPIO.IN)
+    # define the Encoder switch inputs
+    GPIO.setup(self.pinA, GPIO.IN) # pull-ups are too weak, they introduce noise
+    GPIO.setup(self.pinB, GPIO.IN)
+    GPIO.setup(self.button, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
-		# Add event detection to the GPIO inputs
-		GPIO.add_event_detect(self.pinA, GPIO.FALLING, callback=self.switch_event)
-		GPIO.add_event_detect(self.pinB, GPIO.FALLING, callback=self.switch_event)
-		GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=200)
-		return
+    # setup an event detection thread for the A encoder switch
+    GPIO.add_event_detect(self.pinA, GPIO.RISING, callback=self.rotation_decode, bouncetime=2) # bouncetime in mSec
 
-	# Call back routine called by switch events
-	def switch_event(self,switch):
-		if GPIO.input(self.pinA):
-			self.rotary_a = 1
-		else:
-			self.rotary_a = 0
+    # setup an event detection thread for the button switch
+    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=3) # bouncetime in mSec
 
-		if GPIO.input(self.pinB):
-			self.rotary_b = 1
-		else:
-			self.rotary_b = 0
-
-		self.rotary_c = self.rotary_a ^ self.rotary_b
-		new_state = self.rotary_a * 4 + self.rotary_b * 2 + self.rotary_c * 1
-		delta = (new_state - self.last_state) % 4
-		self.last_state = new_state
-		event = 0
-
-		if delta == 1:
-			if self.direction == self.CLOCKWISE:
-				# print "Clockwise"
-				event = self.direction
-			else:
-				self.direction = self.CLOCKWISE
-		elif delta == 3:
-			if self.direction == self.ANTICLOCKWISE:
-				# print "Anticlockwise"
-				event = self.direction
-			else:
-				self.direction = self.ANTICLOCKWISE
-		if event > 0:
-			self.callback(event)
-		return
+    return
 
 
-	# Push button up event
-	def button_event(self,button):
-		if GPIO.input(button): 
-			event = self.BUTTONUP 
-		else:
-			event = self.BUTTONDOWN 
-		self.callback(event)
-		return
+  def rotation_decode(self,switch):
 
-	# Get a switch state
-	def getSwitchState(self, switch):
-		return  GPIO.input(switch)
+    sleep(0.002) # extra 2 mSec de-bounce time
 
-# End of RotaryEncoder class
-#!/usr/bin/env python
-#
-# Raspberry Pi Rotary Encoder Class
-# $Id: rotary_class.py,v 1.2 2014/01/31 13:34:48 bob Exp $
-#
-# Author : Bob Rathbone
-# Site   : http://www.bobrathbone.com
-#
-# This class uses standard rotary encoder with push switch
-# 
-#
+    # read both of the switches
+    Switch_A = GPIO.input(self.pinA)
+    Switch_B = GPIO.input(self.pinB)
 
-import RPi.GPIO as GPIO
+    if (Switch_A == 1) and (Switch_B == 0) : # A then B ->
+        #counter += 1
+        #print ("direction -> ")
+        event=self.CLOCKWISE
+        self.callback(event)
+      
+          # at this point, B may still need to go high, wait for it
+        while Switch_B == 0:
+            Switch_B = GPIO.input(self.pinB)
+        # now wait for B to drop to end the click cycle
+        while Switch_B == 1:
+            Switch_B = GPIO.input(self.pinB)
+        
+    elif (Switch_A == 1) and (Switch_B == 1): # B then A <-
+        #counter -= 1
+        #print ("direction <- ")
+        event=self.ANTICLOCKWISE
+        self.callback(event)
 
-class RotaryEncoder:
+          # A is already high, wait for A to drop to end the click cycle
+        while Switch_A == 1:
+            Switch_A = GPIO.input(self.pinA)
 
-	CLOCKWISE=1
-	ANTICLOCKWISE=2
-	BUTTONDOWN=3
-	BUTTONUP=4
+    else: # discard all other combinations
+        return
 
-	rotary_a = 0
-	rotary_b = 0
-	rotary_c = 0
-	last_state = 0
-	direction = 0
+  # Push button event
+  def button_event(self,button):
+      if GPIO.input(button):
+          event = self.BUTTONUP
+      else:
+          event = self.BUTTONDOWN
+      self.callback(event)
+      return
 
-	# Initialise rotary encoder object
-	def __init__(self,pinA,pinB,button,callback):
-		self.pinA = pinA
-		self.pinB = pinB
-		self.button = button
-		self.callback = callback
-
-		GPIO.setmode(GPIO.BOARD)
-		
-		# The following lines enable the internal pull-up resistors
-		# on version 2 (latest) boards
-		GPIO.setwarnings(False)
-		GPIO.setup(self.pinA, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-		GPIO.setup(self.pinB, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-		GPIO.setup(self.button, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-		# For version 1 (old) boards comment out the above four lines
-		# and un-comment the following 3 lines
-		#GPIO.setup(self.pinA, GPIO.IN)
-		#GPIO.setup(self.pinB, GPIO.IN)
-		#GPIO.setup(self.button, GPIO.IN)
-
-		# Add event detection to the GPIO inputs
-		GPIO.add_event_detect(self.pinA, GPIO.FALLING, callback=self.switch_event)
-		GPIO.add_event_detect(self.pinB, GPIO.FALLING, callback=self.switch_event)
-		GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=200)
-		return
-
-	# Call back routine called by switch events
-	def switch_event(self,switch):
-		if GPIO.input(self.pinA):
-			self.rotary_a = 1
-		else:
-			self.rotary_a = 0
-
-		if GPIO.input(self.pinB):
-			self.rotary_b = 1
-		else:
-			self.rotary_b = 0
-
-		self.rotary_c = self.rotary_a ^ self.rotary_b
-		new_state = self.rotary_a * 4 + self.rotary_b * 2 + self.rotary_c * 1
-		delta = (new_state - self.last_state) % 4
-		self.last_state = new_state
-		event = 0
-
-		if delta == 1:
-			if self.direction == self.CLOCKWISE:
-				# print "Clockwise"
-				event = self.direction
-			else:
-				self.direction = self.CLOCKWISE
-		elif delta == 3:
-			if self.direction == self.ANTICLOCKWISE:
-				# print "Anticlockwise"
-				event = self.direction
-			else:
-				self.direction = self.ANTICLOCKWISE
-		if event > 0:
-			self.callback(event)
-		return
-
-
-	# Push button up event
-	def button_event(self,button):
-		if GPIO.input(button): 
-			event = self.BUTTONUP 
-		else:
-			event = self.BUTTONDOWN 
-		self.callback(event)
-		return
-
-	# Get a switch state
-	def getSwitchState(self, switch):
-		return  GPIO.input(switch)
-
-# End of RotaryEncoder class
+# Get a switch state
+  def getSwitchState(self, switch):
+    return GPIO.input(switch)
