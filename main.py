@@ -18,8 +18,8 @@ GPIO.setmode(GPIO.BOARD)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
-GPIO.setup(relay1, GPIO.OUT, initial=GPIO.LOW)
-GPIO.setup(relay2, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
+GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(speaker, GPIO.OUT)
 
 # Start PWM speaker
@@ -32,11 +32,11 @@ now = datetime.datetime.now()
 extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
 htrstate = ['Off', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
-last_htrstate = {'endtime':now, 'state': htrstatus, 'temp': 0}
+last_htrstate = {'endtime': now, 'state': htrstatus, 'temp': 0}
 
 # Defaults
-target_temp = 21        # in celsius
-temp_tolerance = 0	#
+target_temp = 20.5      # in celsius
+temp_tolerance = 0.5	#
 refreshrate = 0.1	# in seconds
 
 # todo - Load saved data 
@@ -87,30 +87,26 @@ def smoothsensordata(samples,refresh):
         stemp,spressure,shumidity=0,0,0 
 
 def htrtoggle(state):
-    global htrstatus, stemp, htrstate
+    global htrstatus, stemp, htrstate, last_htrstate
     now = datetime.datetime.now()
-    last_htrstate = {'endtime':now, 'state': htrstatus, 'temp': stemp}
+    last_htrstate = {'endtime': now, 'state': htrstatus, 'temp': stemp}
     if state == 0:
-        GPIO.output(relay1, GPIO.LOW)
-        GPIO.output(relay2, GPIO.LOW)
-        htrstatus = htrstate[0]
-    elif state == 1:
-        GPIO.output(relay1, GPIO.HIGH)
-        GPIO.output(relay2, GPIO.LOW)
-        htrstatus = htrstate[1]
-    elif state == 2:
         GPIO.output(relay1, GPIO.HIGH)
         GPIO.output(relay2, GPIO.HIGH)
+        htrstatus = htrstate[0]
+    elif state == 1:
+        GPIO.output(relay1, GPIO.LOW)
+        GPIO.output(relay2, GPIO.HIGH)
+        htrstatus = htrstate[1]
+    elif state == 2:
+        GPIO.output(relay1, GPIO.LOW)
+        GPIO.output(relay2, GPIO.LOW)
         htrstatus = htrstate[2]
 
 
 def thermostat():
     global target_temp, stemp, temp_tolerance, htrstatus, htrstate, last_htrstate
-
-# - no need to heat
-# - stage 1 check trend 
-# - stage 2 check trend
-#
+    time.sleep(5)
     while True:
       now = datetime.datetime.now()
       if stemp >= target_temp:
@@ -129,7 +125,7 @@ def thermostat():
         if stemp < target_temp - temp_tolerance:
           htrtoggle(2)
           time.sleep(10)
-    time.sleep(1)
+      time.sleep(3)
  
 
 def drawstatus():
