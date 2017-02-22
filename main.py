@@ -11,12 +11,19 @@ rotarybutton = 15
 
 # Define GPIO outputs
 relay1 = 7
+speaker = 12
 
 GPIO.setmode(GPIO.BOARD)
-GPIO.setup(relay1, GPIO.OUT, initial=GPIO.LOW)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+GPIO.setup(relay1, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(speaker, GPIO.OUT)
+
+# Start PWM speaker
+p = GPIO.PWM(speaker, 8000) 
+p.start(0)
+
 
 # Initialiaze variables
 extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
@@ -24,10 +31,33 @@ htrstate = "Off"
 
 # Defaults
 target_temp = 21        # in celsius
-temp_tolerance = 1	#
+temp_tolerance = 0	#
 refreshrate = 0.1	# in seconds
 
 # todo - Load saved data 
+
+def playtone(tone):
+  if tone == 1:
+    p.ChangeDutyCycle(100)
+    time.sleep(0.001)
+    p.ChangeDutyCycle(0)
+  elif tone == 2:
+    p.ChangeDutyCycle(100)
+    time.sleep(0.001)
+    p.ChangeDutyCycle(0)
+  elif tone == 3:
+    p.ChangeFrequency(440)
+    p.ChangeDutyCycle(100)
+    time.sleep(0.5)
+    p.ChangeDutyCycle(0)
+    p.ChangeFrequency(4000)
+  elif tone == 4:
+    p.ChangeFrequency(220)
+    p.ChangeDutyCycle(100)
+    time.sleep(0.5)
+    p.ChangeDutyCycle(0)
+    p.ChangeFrequency(4000)
+
 
 def getweather():  
 # Get weather from weather API
@@ -41,12 +71,16 @@ def smoothsensordata(samples,refresh):
     global stemp,spressure,shumidity
     stemp,spressure,shumidity = readBME280All()
     while True:
-      t,p,h = 0,0,0
-      for a in range(0, samples):
-        temp,pressure,humidity = readBME280All()
-        t,p,h=t+temp,p+pressure,h+humidity
-        time.sleep(refresh/samples)
-      stemp,spressure,shumidity=t/samples,p/samples,h/samples
+      try:
+        t,p,h = 0,0,0
+        for a in range(0, samples):
+          temp,pressure,humidity = readBME280All()
+          t,p,h=t+temp,p+pressure,h+humidity
+          time.sleep(refresh/samples)
+        stemp,spressure,shumidity=t/samples,p/samples,h/samples
+      except:
+        print ("sensor failure")
+        stemp,spressure,shumidity=0,0,0 
 
 def externalsensordata():
     global extemp, expressure
@@ -140,27 +174,32 @@ def redraw():
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
-      global uimode      
+      global uimode
       if uimode == 0:
         global target_temp
         if event == 1:
             target_temp = target_temp + 0.1
+            playtone(1)
         elif event == 2:
             target_temp = target_temp - 0.1
+            playtone(2)
 
       elif uimode == 1:
         global forecast_day
         if event == 1:
-            if forecast_day <= 3:
-              forecast_day = forecast_day + 1
+            forecast_day = forecast_day + 1
             if forecast_day > 4:
               forecast_day = 4
+            else:
+              playtone(1)
+
         elif event == 2:
             if forecast_day >= 1:
               forecast_day = forecast_day - 1
-            if forecast_day < 0:
-              forecast_day = 0 
-      print ("fd: ", forecast_day, end="\r")
+              if forecast_day < 0:
+                forecast_day = 0 
+              else:
+                playtone(2)
       return
 
 # This is the event callback routine to handle events
@@ -175,8 +214,9 @@ def switch_event(event):
               uimode = 1
             else:
               uimode = 0
+            playtone(3)
         elif event == RotaryEncoder.BUTTONDOWN:
-            print ()
+            playtone(4)
         return
 
 # Define the switch
@@ -203,6 +243,7 @@ try:
       
 except KeyboardInterrupt:
   GPIO.cleanup()
+  p.stop()
   weatherthread.stop()
   sensorthread.stop()
   externalsensorthread.stop()
