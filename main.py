@@ -1,4 +1,4 @@
-import time, pywapi, json, string, threading, csv
+import time, pywapi, json, string, threading, csv, datetime
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 from rotary_class import RotaryEncoder
@@ -23,14 +23,16 @@ GPIO.setup(relay2, GPIO.OUT, initial=GPIO.LOW)
 GPIO.setup(speaker, GPIO.OUT)
 
 # Start PWM speaker
-p = GPIO.PWM(speaker, 800) 
+p = GPIO.PWM(speaker, 600) 
 p.start(0)
 
 
 # Initialiaze variables
+now = datetime.datetime.now()
 extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
 htrstate = ['Off', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
+last_htrstate = {'endtime':now, 'state': htrstatus, 'temp': 0}
 
 # Defaults
 target_temp = 21        # in celsius
@@ -41,25 +43,24 @@ refreshrate = 0.1	# in seconds
 
 def playtone(tone):
   if tone == 1:
-    p.ChangeDutyCycle(100)
+    p.ChangeDutyCycle(99)
     time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 2:
-    p.ChangeDutyCycle(100)
+    p.ChangeDutyCycle(99)
     time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 3:
-    p.ChangeDutyCycle(100)
-    p.ChangeFrequency(440)
-    time.sleep(0.3)
+    p.ChangeDutyCycle(50)
+    p.ChangeFrequency(880)
+    time.sleep(0.05)
     p.ChangeDutyCycle(0)
-    p.ChangeFrequency(800)
+    p.ChangeFrequency(50)
   elif tone == 4:
     p.ChangeFrequency(220)
-    p.ChangeDutyCycle(100)
-    time.sleep(0.3)
+    p.ChangeDutyCycle(50)
+    time.sleep(0.05)
     p.ChangeDutyCycle(0)
-    p.ChangeFrequency(800)
 
 
 def getweather():  
@@ -85,18 +86,10 @@ def smoothsensordata(samples,refresh):
         print ("sensor failure")
         stemp,spressure,shumidity=0,0,0 
 
-def externalsensordata():
-    global extemp, expressure
-    while True:
-        with open('plutolatest.csv') as csvfile:
-           reader = csv.DictReader(csvfile)
-           for row in reader:
-              extemp,expressure = row['temp'], row['pressure']
-    time.sleep(3)
-                                      # todo: compare timestamps
-        
 def htrtoggle(state):
-    global htrstatus
+    global htrstatus, stemp, htrstate
+    now = datetime.datetime.now()
+    last_htrstate = {'endtime':now, 'state': htrstatus, 'temp': stemp}
     if state == 0:
         GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.LOW)
@@ -110,61 +103,65 @@ def htrtoggle(state):
         GPIO.output(relay2, GPIO.HIGH)
         htrstatus = htrstate[2]
 
+
 def thermostat():
-    global target_temp, stemp, temp_tolerance
+    global target_temp, stemp, temp_tolerance, htrstatus, htrstate, last_htrstate
 
-# it gets cold => stage 2 ---> wait ---> did it get warmer? -- switch to stage 1 or continue stage 2
-# stage 1 --- is it getting warmer
-
+# - no need to heat
+# - stage 1 check trend 
+# - stage 2 check trend
+#
     while True:
-      time.sleep(5)
-      if stemp < target_temp - temp_tolerance:	# Trigger heating sequence
-        htrtoggle(2)				# Stage 2 for 5 minutes
-        watchtemp = stemp			# check if it starts to warm
-        while stemp <= watchtemp:
-          time.sleep(300)
-
-        htrtoggle(1)				# Try stage 1 for 5 minutes
-        watchtemp = stemp
-        time.sleep(300)
-        if stemp > watchtemp:			# Continue heating with stage 1 for another minute if warming
-          time.sleep(120)			# and turn off if target reached
-          if stemp >= target_temp:
-            htrtoggle(0)
-
-        else:
-          htrtoggle(2)				# Or fall back to stage 2 until warming
-          watchtemp = stemp			
-          while stemp <= watchtemp:
-            time.sleep(120)
-
-      if stemp >= target_temp:			# If target reached, Turn off for 5min and until next threshold event
+      now = datetime.datetime.now()
+      if stemp >= target_temp:
         htrtoggle(0)
-        time.sleep(600)
+      elif htrstatus == htrstate[1]:
+        if now - last_htrstate(endtime) > 300:
+          if stemp - last_htrstate(stemp) < 0.066:	# 0.066 over 5min = (0.8/60)*5 = 0.8 degrees per hour
+            htrtoggle(2)
+      elif htrstatus == htrstate[2]:
+        if stemp >= target_temp - temp_tolerance:
+          htrtoggle(1)
+        elif now - last_htrstate(endtime) > 300:
+          if stemp - last_htrstate(stemp) > 0.066:
+            htrtoggle(1)
+      elif htrstatus == htrstate[0]:
+        if stemp < target_temp - temp_tolerance:
+          htrtoggle(2)
+          time.sleep(10)
+    time.sleep(1)
+ 
 
 def drawstatus():
 # Draw mode 0 (status screen)
     global latest_weather, stemp, shumidity, target_temp, htrstatus, extemp
     localtime = time.asctime(time.localtime(time.time()))
     
-    while latest_weather == 0:
-      print ("waiting for external weather info")
-      time.sleep(1)
+    if latest_weather == 0:
+      for i in range(0,11):
+        print ("waiting for external weather info")
+        time.sleep(1)
+        if latest_weather != 0:
+          break
+
+    if latest_weather == 0:
+      outtemp = '---' + chr(223) +"C"
+      cc = "N/A"
+      outhumidity = "---%"
+    
    
     outtempraw = int(latest_weather['current_conditions'] ['temperature'])
     outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
     cc = latest_weather['current_conditions']['text']
     outhumidity = latest_weather['current_conditions']['humidity'] + "%"
     date = time.strftime("%d/%m/%Y")
-    sensortemp = '{0:.1f}'.format(stemp) + chr(223) + "C"
-#    exsensortemp = (extemp) + chr(223) + "C"
-    sensorhumidity = '{0:.1f}'.format(shumidity) + "%"
+    sensortemp = '{0:.2f}'.format(stemp) + chr(223) + "C"
+    sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
     tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
 
     mylcd.lcd_display_string(htrstatus.ljust(10) + localtime[-13:-8].rjust(10),1)
     mylcd.lcd_display_string(tt.center(20), 2)
     mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 3)
-#    mylcd.lcd_display_string(exsensortemp.ljust(10) + outtemp.rjust(10), 3)
     mylcd.lcd_display_string(sensorhumidity.ljust(10) + outhumidity.rjust(10), 4)
     return
 
@@ -255,13 +252,11 @@ rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 weatherthread = threading.Thread(target=getweather)
 sensorthread = threading.Thread(target=smoothsensordata,args=(2,5))
-externalsensorthread = threading.Thread(target=externalsensordata)
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
 
 weatherthread.start()
 sensorthread.start()
-#externalsensorthread.start()
 thermostatthread.start()
 displaythread.start()
 
@@ -272,11 +267,10 @@ try:
   while True:
     time.sleep(5)
       
-except KeyboardInterrupt:
+except:
   GPIO.cleanup()
   p.stop()
   weatherthread.stop()
   sensorthread.stop()
-  externalsensorthread.stop()
   thermostatthread.stop()
   displaythread.stop()
