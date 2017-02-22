@@ -10,7 +10,8 @@ rotaryB = 13
 rotarybutton = 15
 
 # Define GPIO outputs
-relay1 = 7
+relay1 = 16	# --stage 1 heat (low)
+relay2 = 18	# --stage 2 heat (high)
 speaker = 12
 
 GPIO.setmode(GPIO.BOARD)
@@ -18,16 +19,18 @@ GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 GPIO.setup(relay1, GPIO.OUT, initial=GPIO.LOW)
+GPIO.setup(relay2, GPIO.OUT, initial=GPIO.LOW)
 GPIO.setup(speaker, GPIO.OUT)
 
 # Start PWM speaker
-p = GPIO.PWM(speaker, 8000) 
+p = GPIO.PWM(speaker, 800) 
 p.start(0)
 
 
 # Initialiaze variables
 extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
-htrstate = "Off"
+htrstate = ['Off', 'Low Heat', 'Full Heat']
+htrstatus = htrstate[0]
 
 # Defaults
 target_temp = 21        # in celsius
@@ -39,24 +42,24 @@ refreshrate = 0.1	# in seconds
 def playtone(tone):
   if tone == 1:
     p.ChangeDutyCycle(100)
-    time.sleep(0.001)
+    time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 2:
     p.ChangeDutyCycle(100)
-    time.sleep(0.001)
+    time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 3:
-    p.ChangeFrequency(440)
     p.ChangeDutyCycle(100)
-    time.sleep(0.5)
+    p.ChangeFrequency(440)
+    time.sleep(0.3)
     p.ChangeDutyCycle(0)
-    p.ChangeFrequency(4000)
+    p.ChangeFrequency(800)
   elif tone == 4:
     p.ChangeFrequency(220)
     p.ChangeDutyCycle(100)
-    time.sleep(0.5)
+    time.sleep(0.3)
     p.ChangeDutyCycle(0)
-    p.ChangeFrequency(4000)
+    p.ChangeFrequency(800)
 
 
 def getweather():  
@@ -93,27 +96,55 @@ def externalsensordata():
                                       # todo: compare timestamps
         
 def htrtoggle(state):
-    global htrstate
+    global htrstatus
     if state == 0:
         GPIO.output(relay1, GPIO.LOW)
-        htrstate = "Off"
+        GPIO.output(relay2, GPIO.LOW)
+        htrstatus = htrstate[0]
     elif state == 1:
         GPIO.output(relay1, GPIO.HIGH)
-        htrstate = "Heat"
+        GPIO.output(relay2, GPIO.LOW)
+        htrstatus = htrstate[1]
+    elif state == 2:
+        GPIO.output(relay1, GPIO.HIGH)
+        GPIO.output(relay2, GPIO.HIGH)
+        htrstatus = htrstate[2]
 
 def thermostat():
-    global target_temp, stemp, extemp, temp_tolerance
+    global target_temp, stemp, temp_tolerance
+
+# it gets cold => stage 2 ---> wait ---> did it get warmer? -- switch to stage 1 or continue stage 2
+# stage 1 --- is it getting warmer
+
     while True:
-      watchtemp = stemp
-      if watchtemp < target_temp - temp_tolerance:
-           htrtoggle(1)        
-      if watchtemp > target_temp + temp_tolerance:
-           htrtoggle(0)
-      time.sleep(3)
+      time.sleep(5)
+      if stemp < target_temp - temp_tolerance:	# Trigger heating sequence
+        htrtoggle(2)				# Stage 2 for 5 minutes
+        watchtemp = stemp			# check if it starts to warm
+        while stemp <= watchtemp:
+          time.sleep(300)
+
+        htrtoggle(1)				# Try stage 1 for 5 minutes
+        watchtemp = stemp
+        time.sleep(300)
+        if stemp > watchtemp:			# Continue heating with stage 1 for another minute if warming
+          time.sleep(120)			# and turn off if target reached
+          if stemp >= target_temp:
+            htrtoggle(0)
+
+        else:
+          htrtoggle(2)				# Or fall back to stage 2 until warming
+          watchtemp = stemp			
+          while stemp <= watchtemp:
+            time.sleep(120)
+
+      if stemp >= target_temp:			# If target reached, Turn off for 5min and until next threshold event
+        htrtoggle(0)
+        time.sleep(600)
 
 def drawstatus():
 # Draw mode 0 (status screen)
-    global latest_weather, stemp, shumidity, target_temp, htrstate, extemp
+    global latest_weather, stemp, shumidity, target_temp, htrstatus, extemp
     localtime = time.asctime(time.localtime(time.time()))
     
     while latest_weather == 0:
@@ -130,7 +161,7 @@ def drawstatus():
     sensorhumidity = '{0:.1f}'.format(shumidity) + "%"
     tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
 
-    mylcd.lcd_display_string(htrstate.ljust(10) + localtime[-13:-8].rjust(10),1)
+    mylcd.lcd_display_string(htrstatus.ljust(10) + localtime[-13:-8].rjust(10),1)
     mylcd.lcd_display_string(tt.center(20), 2)
     mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 3)
 #    mylcd.lcd_display_string(exsensortemp.ljust(10) + outtemp.rjust(10), 3)
