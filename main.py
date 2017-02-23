@@ -32,7 +32,7 @@ p.start(0)
 
 # Initialiaze variables
 now = datetime.datetime.now()
-uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0
+tt_in,tt_offset,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
 run,toggledisplay = True,True
 stemp = None
 htrstate = ['Off', 'Low Heat', 'Full Heat']
@@ -41,6 +41,7 @@ lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
 
 # Defaults
 target_temp_setting = 20.8      # in celsius
+target_temp = target_temp_setting
 temp_tolerance = 0.9	
 refreshrate = 0.1		# in seconds
 
@@ -107,17 +108,17 @@ def smoothsensordata(samples,refresh):
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
-    global target_temp, target_temp_setting
+    global ttoffset
     while True:
-      awaytemp = target_temp_setting - 2
-      sleepingtemp = target_temp_setting
+      awaytemp = -2
+      sleepingtemp = 0
 
       now = datetime.datetime.now()
       weekday = now.weekday()
       hour = now.hour + 1		# react an hour in advance
     
       workdays=range(0,4)		# workdays
-      workhours=range(6,18)
+      workhours=range(6,17)
       customwd=range(4,5) 	# custom workday(s)
       customwdhours=range(6,14)
 
@@ -127,15 +128,14 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
         whrs = customwdhrs
       else:
         whrs = None
-        target_temp = target_temp_setting
+        ttoffset = 0
 
       if hour in whrs:
-        target_temp = awaytemp
+        ttoffset = awaytemp
       elif hour+1 in whrs:		# temp boost in the morning
-        target_temp = target_temp_setting + 1
+        ttoffset =  + 1
       else:
-        target_temp = target_temp_setting
-      
+        ttoffset = 0
       time.sleep(300)
 
 def htrtoggle(state):
@@ -158,8 +158,10 @@ def htrtoggle(state):
       print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
 
 def thermostat():
-    global target_temp, stemp, temp_tolerance, htrstatus, htrstate, lhs
+    global target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs
+    target_temp = target_temp_setting + ttoffset
     time.sleep(5)
+   
     while True:
       now = datetime.datetime.now()
       tdelta = now - lhs[0]
@@ -274,21 +276,26 @@ def redraw():
         drawweather()
       time.sleep(refreshrate)
     
+def ui_input():
+  global tt_in, target_temp_setting, ttoffset, target_temp
+  while True:
+    target_temp_setting += tt_in
+    tt_in=0
+    target_temp = target_temp_setting + ttoffset
+    time.sleep(0.05)
+      
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
       global uimode
-
       if uimode == 0:
-        global target_temp_setting
-        tt = '{0:.1f}'.format(target_temp_setting) + chr(223) + "C"
-
+        global tt_in
         if event == 1:
-            target_temp_setting += 0.1
+            tt_in += 0.05
             playtone(1)
 
         elif event == 2:
-            target_temp_setting -= 0.1
+            tt_in -= 0.05
             playtone(2)
 
       elif uimode == 1:
@@ -334,17 +341,21 @@ schedulethread = threading.Thread(target=checkschedule)
 sensorthread = threading.Thread(target=smoothsensordata, args=(2,5))
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
+ui_inputthread = threading.Thread(target=ui_input)
 
 weatherthread.setDaemon(True)
 sensorthread.setDaemon(True)
 thermostatthread.setDaemon(True)
 schedulethread.setDaemon(True)
+ui_inputthread.setDaemon(True)
 
 sensorthread.start()
 schedulethread.start()
 weatherthread.start()
 displaythread.start()
-time.sleep(5)
+time.sleep(4)
+ui_inputthread.start()
+time.sleep(1)
 thermostatthread.start()
 
 try:
