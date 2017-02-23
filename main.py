@@ -66,9 +66,18 @@ def playtone(tone):
 def getweather():  
 # Get weather from weather API
     while True:
-      global latest_weather
-      latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
-      time.sleep(900)
+      try:
+        global latest_weather
+        print (datetime.datetime.now()," - updating weather data...")
+        latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
+        time.sleep(3)
+      except:
+        print (datetime.datetime.now()," - ERROR: weather update failure")
+      finally:
+        print (datetime.datetime.now()," - weather updated from weather.com")
+        time.sleep(900)
+
+        
 
 def smoothsensordata(samples,refresh):
 # Average sensor readings (readings over timeperiod)
@@ -76,16 +85,17 @@ def smoothsensordata(samples,refresh):
     while True:
       try:
         stemp,spressure,shumidity = readBME280All()
+      except:
+        print (datetime.datetime.now()," - ERROR: sensor failure")
+        stemp,spressure,shumidity=None,0,0 
+        time.sleep(5)
+      finally:
         t,p,h = 0,0,0
         for a in range(0, samples):
           temp,pressure,humidity = readBME280All()
           t,p,h=t+temp,p+pressure,h+humidity
           time.sleep(refresh/samples)
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
-      except:
-        print ("sensor failure", end="\r")
-        time.sleep(1)
-        stemp,spressure,shumidity=None,0,0 
 
 def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs
@@ -103,6 +113,7 @@ def htrtoggle(state):
         GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.LOW)
         htrstatus = htrstate[2]
+    print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
 
 
 def thermostat():
@@ -121,7 +132,6 @@ def thermostat():
         time.sleep(3)
         if seconds >= 300:
           htrtoggle(0)
-     
 
       if stemp >= target_temp:
         htrtoggle(0)
@@ -151,9 +161,9 @@ def drawstatus():
        sensortemp = stemp
 
     if latest_weather == 0:
-      for i in range(0,11):
-        print ("waiting for external weather info")
-        time.sleep(1)
+      for i in range(0,4):
+        time.sleep(3)
+        print ("waiting for external weather info...")
         if latest_weather != 0:
           break
 
