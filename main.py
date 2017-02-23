@@ -10,8 +10,8 @@ rotaryB = 13
 rotarybutton = 15
 
 # Define GPIO outputs
-relay1 = 16	# --stage 1 heat (low)
-relay2 = 18	# --stage 2 heat (high)
+relay1 = 16	# --stage 1 heat (W1)
+relay2 = 18	# --stage 2 heat (W2)
 speaker = 12
 
 GPIO.setmode(GPIO.BOARD)
@@ -30,19 +30,19 @@ mylcd.backlight(1)
 p = GPIO.PWM(speaker, 600) 
 p.start(0)
 
-
 # Initialiaze variables
 now = datetime.datetime.now()
-uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0
+uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0
 run,toggledisplay = True,True
+stemp = None
 htrstate = ['Off', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
 lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
 
 # Defaults
-target_temp = 18.8      # in celsius
-temp_tolerance = 0.8	#
-refreshrate = 0.1	# in seconds
+target_temp_setting = 20.8      # in celsius
+temp_tolerance = 0.9	
+refreshrate = 0.1		# in seconds
 
 # todo - Load saved data 
 
@@ -55,11 +55,11 @@ signal.signal(signal.SIGTERM, handler_stop_signals)
 
 def playtone(tone):
   if tone == 1:
-    p.ChangeDutyCycle(99)
+    p.ChangeDutyCycle(100)
     time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 2:
-    p.ChangeDutyCycle(99)
+    p.ChangeDutyCycle(100)
     time.sleep(0.01)
     p.ChangeDutyCycle(0)
   elif tone == 3:
@@ -74,7 +74,6 @@ def playtone(tone):
     time.sleep(0.05)
     p.ChangeDutyCycle(0)
 
-
 def getweather():  
 # Get weather from weather API
     while True:
@@ -88,8 +87,6 @@ def getweather():
       finally:
         print (datetime.datetime.now()," - weather updated from weather.com")
         time.sleep(900)
-
-        
 
 def smoothsensordata(samples,refresh):
 # Average sensor readings (readings over timeperiod)
@@ -109,6 +106,38 @@ def smoothsensordata(samples,refresh):
           time.sleep(refresh/samples)
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
 
+def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
+    global target_temp, target_temp_setting
+    while True:
+      awaytemp = target_temp_setting - 2
+      sleepingtemp = target_temp_setting
+
+      now = datetime.datetime.now()
+      weekday = now.weekday()
+      hour = now.hour + 1		# react an hour in advance
+    
+      workdays=range(0,4)		# workdays
+      workhours=range(6,18)
+      customwd=range(4,5) 	# custom workday(s)
+      customwdhours=range(6,14)
+
+      if weekday in workdays:
+        whrs = workhours
+      elif weekday in customwd:
+        whrs = customwdhrs
+      else:
+        whrs = None
+        target_temp = target_temp_setting
+
+      if hour in whrs:
+        target_temp = awaytemp
+      elif hour+1 in whrs:		# temp boost in the morning
+        target_temp = target_temp_setting + 1
+      else:
+        target_temp = target_temp_setting
+      
+      time.sleep(300)
+
 def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs
     now = datetime.datetime.now()
@@ -127,7 +156,6 @@ def htrtoggle(state):
         htrstatus = htrstate[2]
     if lhs[1] != htrstatus:
       print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
-
 
 def thermostat():
     global target_temp, stemp, temp_tolerance, htrstatus, htrstate, lhs
@@ -161,11 +189,10 @@ def thermostat():
           htrtoggle(2)
           time.sleep(10)
       time.sleep(1)
- 
 
 def drawstatus():
 # Draw mode 0 (status screen)
-    global latest_weather, stemp, shumidity, target_temp, htrstatus
+    global latest_weather, stemp, shumidity, target_temp, target_temp_setting, htrstatus
     localtime = time.asctime(time.localtime(time.time()))
     
     if stemp == None:
@@ -187,9 +214,11 @@ def drawstatus():
     sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
     sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
     tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
+    tts = '{0:.1f}'.format(target_temp_setting) + chr(223) + "C"
 
     mylcd.lcd_display_string(htrstatus.ljust(10) + localtime[-13:-8].rjust(10),1)
-    mylcd.lcd_display_string(tt.center(20), 2)
+    mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
+#    mylcd.lcd_display_string(tts.center(20), 2)
     mylcd.lcd_display_string(sensortemperature.ljust(10) + outtemp.rjust(10), 3)
     mylcd.lcd_display_string(sensorhumidity.ljust(10) + outhumidity.rjust(10), 4)
     return
@@ -251,15 +280,15 @@ def rotaryevent(event):
       global uimode
 
       if uimode == 0:
-        global target_temp
-        tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
+        global target_temp_setting
+        tt = '{0:.1f}'.format(target_temp_setting) + chr(223) + "C"
 
         if event == 1:
-            target_temp = target_temp + 0.1
+            target_temp_setting += 0.1
             playtone(1)
 
         elif event == 2:
-            target_temp = target_temp - 0.1
+            target_temp_setting -= 0.1
             playtone(2)
 
       elif uimode == 1:
@@ -301,6 +330,7 @@ def switch_event(event):
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 weatherthread = threading.Thread(target=getweather)
+schedulethread = threading.Thread(target=checkschedule)
 sensorthread = threading.Thread(target=smoothsensordata, args=(2,5))
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
@@ -308,12 +338,14 @@ displaythread = threading.Thread(target=redraw)
 weatherthread.setDaemon(True)
 sensorthread.setDaemon(True)
 thermostatthread.setDaemon(True)
-#displaythread.setDaemon(True)
+schedulethread.setDaemon(True)
 
-weatherthread.start()
 sensorthread.start()
-thermostatthread.start()
+schedulethread.start()
+weatherthread.start()
 displaythread.start()
+time.sleep(5)
+thermostatthread.start()
 
 try:
   while run:
