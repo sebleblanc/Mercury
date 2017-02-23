@@ -29,14 +29,14 @@ p.start(0)
 
 # Initialiaze variables
 now = datetime.datetime.now()
-extemp,expressure,uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0,0,0
+uimode,forecast_day,latest_weather,stemp,spressure,shumidity = 0,0,0,0,0,0
 htrstate = ['Off', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
-last_htrstate = {'endtime': now, 'state': htrstatus, 'temp': 0}
+lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
 
 # Defaults
-target_temp = 20.5      # in celsius
-temp_tolerance = 0.5	#
+target_temp = 20.8      # in celsius
+temp_tolerance = 0.8	#
 refreshrate = 0.1	# in seconds
 
 # todo - Load saved data 
@@ -73,9 +73,9 @@ def getweather():
 def smoothsensordata(samples,refresh):
 # Average sensor readings (readings over timeperiod)
     global stemp,spressure,shumidity
-    stemp,spressure,shumidity = readBME280All()
     while True:
       try:
+        stemp,spressure,shumidity = readBME280All()
         t,p,h = 0,0,0
         for a in range(0, samples):
           temp,pressure,humidity = readBME280All()
@@ -83,13 +83,14 @@ def smoothsensordata(samples,refresh):
           time.sleep(refresh/samples)
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
       except:
-        print ("sensor failure")
-        stemp,spressure,shumidity=0,0,0 
+        print ("sensor failure", end="\r")
+        time.sleep(1)
+        stemp,spressure,shumidity=None,0,0 
 
 def htrtoggle(state):
-    global htrstatus, stemp, htrstate, last_htrstate
+    global htrstatus, stemp, htrstate, lhs
     now = datetime.datetime.now()
-    last_htrstate = {'endtime': now, 'state': htrstatus, 'temp': stemp}
+    lhs = [now, htrstatus, stemp]
     if state == 0:
         GPIO.output(relay1, GPIO.HIGH)
         GPIO.output(relay2, GPIO.HIGH)
@@ -105,34 +106,50 @@ def htrtoggle(state):
 
 
 def thermostat():
-    global target_temp, stemp, temp_tolerance, htrstatus, htrstate, last_htrstate
+    global target_temp, stemp, temp_tolerance, htrstatus, htrstate, lhs
     time.sleep(5)
     while True:
       now = datetime.datetime.now()
+      tdelta = now - lhs[0]
+      seconds = tdelta.total_seconds()
+      lasttemp = lhs[2]
+ 
+      while stemp == None:
+        now = datetime.datetime.now()
+        tdelta = now - lhs[0]
+        seconds = tdelta.total_seconds()
+        time.sleep(3)
+        if seconds >= 300:
+          htrtoggle(0)
+     
+
       if stemp >= target_temp:
         htrtoggle(0)
       elif htrstatus == htrstate[1]:
-        if now - last_htrstate(endtime) > 300:
-          if stemp - last_htrstate(stemp) < 0.066:	# 0.066 over 5min = (0.8/60)*5 = 0.8 degrees per hour
+        if seconds > 300:			# determine if stage 1 is heating fast enough
+          if stemp - lasttemp < 0.066:		# threshold for 0.8°C per hour =  0.066°C over 5min  (0.8/60)*5
             htrtoggle(2)
       elif htrstatus == htrstate[2]:
-        if stemp >= target_temp - temp_tolerance:
-          htrtoggle(1)
-        elif now - last_htrstate(endtime) > 300:
-          if stemp - last_htrstate(stemp) > 0.066:
+        if seconds > 300:
+          if stemp + (stemp - lasttemp) >= target_temp:		# project temperature increase to see if we are 5 min away from target temperature
             htrtoggle(1)
       elif htrstatus == htrstate[0]:
-        if stemp < target_temp - temp_tolerance:
+        if stemp < target_temp - temp_tolerance:		# Turn on at full heat for at least 2 minutes
           htrtoggle(2)
-          time.sleep(10)
-      time.sleep(3)
+          time.sleep(120)
+      time.sleep(1)
  
 
 def drawstatus():
 # Draw mode 0 (status screen)
-    global latest_weather, stemp, shumidity, target_temp, htrstatus, extemp
+    global latest_weather, stemp, shumidity, target_temp, htrstatus
     localtime = time.asctime(time.localtime(time.time()))
     
+    if stemp == None:
+       sensortemp = 0
+    else:
+       sensortemp = stemp
+
     if latest_weather == 0:
       for i in range(0,11):
         print ("waiting for external weather info")
@@ -151,13 +168,13 @@ def drawstatus():
     cc = latest_weather['current_conditions']['text']
     outhumidity = latest_weather['current_conditions']['humidity'] + "%"
     date = time.strftime("%d/%m/%Y")
-    sensortemp = '{0:.2f}'.format(stemp) + chr(223) + "C"
+    sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
     sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
     tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
 
     mylcd.lcd_display_string(htrstatus.ljust(10) + localtime[-13:-8].rjust(10),1)
     mylcd.lcd_display_string(tt.center(20), 2)
-    mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 3)
+    mylcd.lcd_display_string(sensortemperature.ljust(10) + outtemp.rjust(10), 3)
     mylcd.lcd_display_string(sensorhumidity.ljust(10) + outhumidity.rjust(10), 4)
     return
 
@@ -165,11 +182,24 @@ def drawweather():
 # Draw mode 1 (weather screen)
     global latest_weather,forecast_day,stemp
     localtime = time.asctime(time.localtime(time.time()))
-    
-    while latest_weather == 0:
-      print ("waiting for external weather info")
-      time.sleep(1)
-   
+
+    if stemp == None:
+       sensortemp = 0
+    else:
+       sensortemp = stemp
+
+    if latest_weather == 0:
+      for i in range(0,11):
+        print ("waiting for external weather info")
+        time.sleep(1)
+        if latest_weather != 0:
+          break
+
+    if latest_weather == 0:
+      outtemp = '---' + chr(223) +"C"
+      cc = "N/A"
+      outhumidity = "---%"
+ 
     outtempraw = int(latest_weather['current_conditions'] ['temperature'])
     outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
     cc = latest_weather['current_conditions']['text']
@@ -178,12 +208,12 @@ def drawweather():
     date = latest_weather['forecasts'][forecast_day]['date']
     high = latest_weather['forecasts'][forecast_day]['high'] + chr(223) + "C" 
     low = latest_weather['forecasts'][forecast_day]['low'] + chr(223) + "C"
-    sensortemp = '{0:.1f}'.format(stemp) + chr(223) + "C"
+    sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
 
     mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6) +"  " + localtime[-13:-8].rjust(8))
     mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
     mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
-    mylcd.lcd_display_string(sensortemp.ljust(10) + outtemp.rjust(10), 4)
+    mylcd.lcd_display_string(sensortemperature.ljust(10) + outtemp.rjust(10), 4)
     return
 
 def redraw():
