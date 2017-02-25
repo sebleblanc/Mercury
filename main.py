@@ -78,16 +78,16 @@ def playtone(tone):
 
 # Get weather from weather API
 def getweather():  
+    global latest_weather
     while True:
       try:
-        global latest_weather
-        print (datetime.datetime.now()," - updating weather data...")
+        #print (datetime.datetime.now()," - updating weather data...")
         latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
         time.sleep(3)
       except:
-        print (datetime.datetime.now()," - ERROR: weather update failure")
+        print (datetime.datetime.now(),"- ERROR: weather update failure")
       finally:
-        print (datetime.datetime.now()," - weather updated from weather.com")
+        #print (datetime.datetime.now()," - weather updated from weather.com")
         drawlist[4] = True
         time.sleep(900)
 
@@ -95,25 +95,25 @@ def getweather():
 def smoothsensordata(samples,refresh):  
     global stemp,spressure,shumidity
     while True:
+      t,p,h = 0,0,0
       try:
         stemp,spressure,shumidity = readBME280All()
-      except:
-        print (datetime.datetime.now()," - ERROR: sensor failure")
-        stemp,spressure,shumidity=None,0,0 
-        time.sleep(5)
-      finally:
-        t,p,h = 0,0,0
         for a in range(0, samples):
           temp,pressure,humidity = readBME280All()
           t,p,h=t+temp,p+pressure,h+humidity
           time.sleep(refresh/samples)
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
+      except:
+        print (datetime.datetime.now(),"- ERROR: sensor failure")
+        stemp,spressure,shumidity=None,0,0 
+        time.sleep(5)
+      finally:
         drawlist[3] = True 
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     global ttoffset
     while True:
-      awaytemp = -2
+      awaytemp = -1.5
       sleepingtemp = 0
 
       now = datetime.datetime.now()
@@ -130,9 +130,8 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       elif weekday in customwd:
         whrs = customwdhrs
       else:
-        whrs = None
+        whrs = []
         ttoffset = 0
-
       if hour in whrs:
         ttoffset = awaytemp
       elif hour+1 in whrs:		# temp boost in the morning
@@ -144,7 +143,7 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
 
 
 def htrtoggle(state):
-    global htrstatus, stemp, htrstate, lhs, drawlist
+    global htrstatus, stemp, htrstate, lhs, drawlist, target_temp
     now = datetime.datetime.now()
     lhs = [now, htrstatus, stemp]
     if state == 0:
@@ -161,7 +160,7 @@ def htrtoggle(state):
         htrstatus = htrstate[2]
     if lhs[1] != htrstatus:
       drawlist[0] = True
-      print (now," - Heater was set to ", lhs[1],", setting to ", htrstatus)
+      print (now, " - ", stemp, "°C => ", target_temp, "°C - was ", lhs[1], ", setting to ", htrstatus)
 
 def thermostat():
     global target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs
@@ -173,15 +172,16 @@ def thermostat():
       seconds = tdelta.total_seconds()
       lasttemp = lhs[2]
  
-      while stemp == None:
+      if stemp == None:
         now = datetime.datetime.now()
         tdelta = now - lhs[0]
         seconds = tdelta.total_seconds()
         time.sleep(3)
         if seconds >= 300:
+          print (datetime.datetime.now(),"- ERROR: Timed out waiting for sensor data")
           htrtoggle(0)
 
-      if stemp >= target_temp:
+      elif stemp >= target_temp:
         htrtoggle(0)
       elif htrstatus == htrstate[1]:
         if seconds > 300:			# determine if stage 1 is heating fast enough
@@ -198,7 +198,7 @@ def thermostat():
       time.sleep(1)
 
 def drawstatus(element):	# Draw mode 0 (status screen)
-    print ("refreshing screen element ", element)
+#    print ("refreshing screen element ", element)
     global latest_weather, stemp, shumidity, target_temp, target_temp_setting, htrstatus, displayed_time, blinker
 								# 0 - Heater Status
     if element == 0:
@@ -375,7 +375,7 @@ def switch_event(event):
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 schedulethread = threading.Thread(target=checkschedule)
-sensorthread = threading.Thread(target=smoothsensordata, args=(3,31.0))  # (no. of samples, period time)
+sensorthread = threading.Thread(target=smoothsensordata, args=(10,1))  # (no. of samples, period time)
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
 
@@ -395,13 +395,18 @@ thermostatthread.start()
 try:
   while run:
     time.sleep(1)
-    pass  
-except :
+except KeyboardInterrupt:
     toggledisplay=False
     displaythread.join()
     GPIO.cleanup()
     p.stop()
-    print(datetime.datetime.now(), " program exited cleanly")
+    print(datetime.datetime.now(), " keyboard interrupt")
+except:
+    toggledisplay=False
+    displaythread.join()
+    GPIO.cleanup()
+    p.stop()
+    print(datetime.datetime.now(), " other exception!")
 finally:
     toggledisplay=False
     displaythread.join()
