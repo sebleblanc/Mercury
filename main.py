@@ -5,13 +5,15 @@ from rotary_class import RotaryEncoder
 from bme280 import readBME280All 
 
 # Define GPIO inputs
-rotaryA = 11 
-rotaryB = 13
-rotarybutton = 15
+rotaryA = 7 
+rotaryB = 11
+rotarybutton = 13
 
 # Define GPIO outputs
 relay1 = 16	# --stage 1 heat (W1)
 relay2 = 18	# --stage 2 heat (W2)
+relay3 = 15	# --fan override (G)
+
 speaker = 12
 
 GPIO.setmode(GPIO.BOARD)
@@ -20,6 +22,7 @@ GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
+GPIO.setup(relay3, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(speaker, GPIO.OUT)
 
 # Start char LCD
@@ -35,7 +38,7 @@ now = datetime.datetime.now()
 tt_in,ttoffset,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
 blinker,run,toggledisplay = True,True,True
 stemp = None
-htrstate = ['Off', 'Low Heat', 'Full Heat']
+htrstate = ['Off', 'Low Heat', 'Full Heat', 'Fan only']
 drawlist = [True, True, True, True, True]
 htrstatus = htrstate[0]
 lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
@@ -149,15 +152,23 @@ def htrtoggle(state):
     if state == 0:
         GPIO.output(relay1, GPIO.HIGH)
         GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay3, GPIO.HIGH)
         htrstatus = htrstate[0]
     elif state == 1:
         GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay3, GPIO.HIGH)
         htrstatus = htrstate[1]
     elif state == 2:
         GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.LOW)
+        GPIO.output(relay3, GPIO.HIGH)
         htrstatus = htrstate[2]
+    elif state == 3:
+        GPIO.output(relay1, GPIO.HIGH)
+        GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay3, GPIO.LOW)
+        
     if lhs[1] != htrstatus:
       drawlist[0] = True
       print (now, " - ", stemp, "°C => ", target_temp, "°C - was ", lhs[1], ", setting to ", htrstatus)
@@ -185,12 +196,20 @@ def thermostat():
         htrtoggle(0)
       elif htrstatus == htrstate[1]:
         if seconds > 300:			# determine if stage 1 is heating fast enough
-          if stemp - lasttemp < 0.066:		# threshold for 0.8°C per hour =  0.066°C over 5min  (0.8/60)*5
+          if stemp - lasttemp < 0.05:		# threshold for 0.6°C per hour =  0.05°C over 5min  (0.6/60)*5
             htrtoggle(2)
       elif htrstatus == htrstate[2]:
         if seconds > 300:
-          if stemp + (stemp - lasttemp) >= target_temp:		# project temperature increase to see if we are 5 min away from target temperature
+          if stemp + (stemp - lasttemp) >= target_temp:	# project temperature increase to see if we are 5 min away from target temperature
+            htrtoggle(3)				# use fan only to finish off heating
+          if stemp - lasttemp >= 0.066:			# threshold for 0.8°C per hour =  0.066°C over 5min  (0.8/60)*5
             htrtoggle(1)
+      elif htrstatus == htrstate[3]:
+        if seconds > 300:
+          if stemp - lasttemp <= 0:			# if the temperature went down, try stage 1 again, else, shutdown
+            htrtoggle[1]
+          else:
+            htrtoggle[0]
       elif htrstatus == htrstate[0]:
         if stemp < target_temp - temp_tolerance:		# Turn on at full heat for at least 10 seconds
           htrtoggle(2)
