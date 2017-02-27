@@ -189,20 +189,20 @@ def htrtoggle(state):
         htrstatus = htrstate[3]
         
     drawlist[0] = True		# -> redraw the screen and remember/reset time, heater state, and temperature
-    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was ", lhs[1] + ", setting to", htrstatus + ".")
+    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
     lhs=[now, htrstatus, stemp]
 
 def thermostat():
     global run, target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs
     stage1min = 0.01		# minimum threshold (in °C/hour) under which we switch to stage 2
-    stage2max = 0.05		# maximum threshold (in °C/hour) over which we switch to stage 1
+    stage2max = 1		# maximum threshold (in °C/hour) over which we switch to stage 1
     time.sleep(5)
     stage1timeout=600
     stage2timeout=480
-    fantimeout=180
+    fantimeout=80
     idletimeout=600
     idletimeout=600
-    updatetimeout=60
+    updatetimeout=180
 
     while run:
       now = datetime.datetime.now()
@@ -219,7 +219,7 @@ def thermostat():
 
       elif htrstatus == htrstate[1]:		# Project temperature increase, if we will hit target temperature -> use fan to finish
         if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
-          if stemp + (stemp - lasttemp) + temp_tolerance/2 > target_temp:		
+          if stemp + (stemp - lasttemp) > target_temp:		
             print (now, "Predicted target temperature. ")
             print (now, status_string)
             htrtoggle(3)
@@ -230,7 +230,7 @@ def thermostat():
 
       elif htrstatus == htrstate[2]:		# Project temperature increase to see if we will hit target temperature -> use fan to finish
         if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
-          if stemp + (stemp - lasttemp)+temp_tolerance/2 > target_temp:
+          if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature.")
             print (now, status_string)
             htrtoggle(3)					
@@ -246,7 +246,7 @@ def thermostat():
 
       elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
         if stemp < target_temp - temp_tolerance:
-          print (now, "Temperature more than", temp_tolerance + "°C below setpoint.")
+          print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
           print (now, status_string)
           htrtoggle(1)
         if seconds%idletimeout <= 1:
@@ -427,7 +427,6 @@ def switch_event(event):
             playtone(3)
         elif event == RotaryEncoder.BUTTONDOWN:
             playtone(4)
-            mylcd.lcd_init()
         return
 
 # Define the switch
