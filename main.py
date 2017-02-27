@@ -33,23 +33,35 @@ mylcd.backlight(1)
 p = GPIO.PWM(speaker, 600) 
 p.start(0)
 
+# Defaults
+setpoint = 20.5      # in celsius
+sensortimeout = 300
+temp_tolerance = 0.9	
+frefreshrate = 0.01 		# in seconds
+target_temp = setpoint
+
+# todo - Load saved data 
+
 # Initialiaze variables
-now = datetime.datetime.now()
 tt_in,ttoffset,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
 blinker,run,toggledisplay = True,True,True
-stemp = None
 htrstate = ['Off', 'Low Heat', 'Full Heat', 'Fan only']
 drawlist = [True, True, True, True, True]
 htrstatus = htrstate[0]
-lhs = [now, htrstatus,  0] 	# endtime, last state, last temp
 
-# Defaults
-setpoint = 20.5      # in celsius
-target_temp = setpoint
-temp_tolerance = 0.9	
-refreshrate = 0.001 		# in seconds
-
-# todo - Load saved data 
+sensorchecktime = datetime.datetime.now()
+stemp = False
+while not stemp:
+  try:
+    stemp,spressure,shumidity = readBME280All()
+  except:
+    print (datetime.datetime.now(),"WARNING: sensor failure")
+    time.sleep(1)
+  if (sensorchecktime-datetime.datetime.now()).total_seconds() >= 10:
+    print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
+    htrtoggle(0)
+    run = False
+lhs = [datetime.datetime.now(), htrstatus,  stemp] 	# endtime, last state, last temp
 
 # OS signal handler
 def handler_stop_signals(signum, frame):
@@ -84,21 +96,23 @@ def getweather():
     global latest_weather
     while True:
       try:
-        #print (datetime.datetime.now()," - updating weather data...")
+        #print (datetime.datetime.now(),"updating weather data...")
         latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
         time.sleep(3)
       except:
-        print (datetime.datetime.now(),"- ERROR: weather update failure")
+        print (datetime.datetime.now(),"ERROR: weather update failure")
       finally:
-        #print (datetime.datetime.now()," - weather updated from weather.com")
+        #print (datetime.datetime.now(),"weather updated from weather.com")
         drawlist[4] = True
         time.sleep(900)
 
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
 def smoothsensordata(samples,refresh):  
     global stemp,spressure,shumidity
+    sensortimeout=300
     while True:
       t,p,h = 0,0,0
+      now = datetime.datetime.now()
       try:
         stemp,spressure,shumidity = readBME280All()
         for a in range(0, samples):
@@ -106,12 +120,16 @@ def smoothsensordata(samples,refresh):
           t,p,h=t+temp,p+pressure,h+humidity
           time.sleep(refresh/samples)
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
+        sensortime = now
       except:
-        print (datetime.datetime.now(),"- ERROR: sensor failure")
-        stemp,spressure,shumidity=None,0,0 
-        time.sleep(5)
+        print (datetime.datetime.now(),"WARNING: sensor failure")
+        if (now-sensortime).total_seconds() >= sensortimeout:
+          print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
+          htrtoggle(0)
+          run = False
       finally:
         drawlist[3] = True 
+        time.sleep(5)
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     global ttoffset
@@ -148,7 +166,6 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
 def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs, drawlist, target_temp
     now = datetime.datetime.now()
-    lhs = [now, htrstatus, stemp]
     if state == 0:
         GPIO.output(relay1, GPIO.HIGH)
         GPIO.output(relay2, GPIO.HIGH)
@@ -170,78 +187,67 @@ def htrtoggle(state):
         GPIO.output(relay2, GPIO.HIGH)
         htrstatus = htrstate[3]
         
-    if lhs[1] != htrstatus:
-      drawlist[0] = True
-      lasttime = lhs[0]
-      print (now, " - ", '{0:.2f}'.format(stemp), "°C => ", '{0:.2f}'.format(target_temp), "°C - was ", lhs[1], " setting to ", htrstatus)
+    drawlist[0] = True		# -> redraw the screen and remember/reset time, heater state, and temperature
+    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was ", lhs[1] + ", setting to", htrstatus + ".")
+    lhs=[now, htrstatus, stemp]
 
 def thermostat():
-    global target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs, lasttime
-    stage1min = 0.60		# minimum threshold (in °C/hour) under which we switch to stage 2
-    stage2max = 0.95		# maximum threshold (in °C/hour) over which we switch to stage 1
+    global run, target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs
+    stage1min = 0.01		# minimum threshold (in °C/hour) under which we switch to stage 2
+    stage2max = 0.05		# maximum threshold (in °C/hour) over which we switch to stage 1
     time.sleep(5)
-    sensortimeout=300
-    stage1timeout=300
+    stage1timeout=600
     stage2timeout=480
     fantimeout=180
-    idletimeout=400
-    while True:
+    idletimeout=600
+
+    while run:
       now = datetime.datetime.now()
       tdelta = now - lhs[0]
       seconds = tdelta.total_seconds()
-      if lhs[2] == 0:
-        lasttemp = stemp
-      else:
-        lasttemp = lhs[2]
+      lasttime = lhs[0]
+      lasttemp = lhs[2]
+      status_string = '{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
+      if stemp >= target_temp:			# Shut off the heater if temperature reached, 
+        if htrstatus !=  htrstate[0]:  		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
+           print (now, "Temperature reached.")
+           print (now, status_string)
+           htrtoggle(0)
 
-      if stemp == None:
-        timeout=sensortimeout
-        while stemp == None:
-          now = datetime.datetime.now()
-          tdelta = now - lhs[0]
-          seconds = tdelta.total_seconds()
-          if seconds >= timeout:
-            print (datetime.datetime.now(),"- ERROR: Timed out waiting for sensor data")
-            htrtoggle(0)
-          time.sleep(3)
-
-      elif stemp >= target_temp:
-        timeout=idletimeout
-        htrtoggle(0)
-        if seconds >= timeout:
-           print ("Temperature reached. "'{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", '{0:.2f}'.format((stemp-lasttemp)/timeout*3600), "°C/hr)")
-
-      elif htrstatus == htrstate[1]:
-        timeout = stage1timeout
-        if seconds >= timeout:			
-          if stemp + (stemp - lasttemp) > target_temp:		# project temperature increase to see if we will hit target temperature
-            print ("Predicted target temperature. ", '{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", 
-'{0:.2f}'.format((stemp-lasttemp)/timeout*3600),"°C/hr)")
-            htrtoggle(3)					# 	use fan to finish off heating
-          elif (stemp - lasttemp)/3600*timeout < stage1min:	# if heating under min threshold, go to stage 2
-            print ("Heating too slowly:", '{0:.2f}'.format((stemp - lasttemp)/3600*timeout), "°C/hr (min=", stage1min, "°C/hr)") 
+      elif htrstatus == htrstate[1]:		# Project temperature increase, if we will hit target temperature -> use fan to finish
+        if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
+          if stemp + (stemp - lasttemp) + temp_tolerance/2 > target_temp:		
+            print (now, "Predicted target temperature. ")
+            print (now, status_string)
+            htrtoggle(3)
+          elif (stemp - lasttemp)*seconds < stage1min*3600:	
+            print (now, "Heating too slowly: (min=", stage1min, "°C/hr)") 
+            print (now, status_string)
             htrtoggle(2)
-      elif htrstatus == htrstate[2]:
-        timeout = stage2timeout
-        if seconds >= timeout:
-          if stemp + (stemp - lasttemp) > target_temp:		# project temperature increase to see if we will hit target temperature
-            print ("Predicted target temperature. ", '{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", 
-'{0:.2f}'.format((stemp-lasttemp)/timeout*3600), "°C/hr)")
-            htrtoggle(3)					# 	use fan to finish off heating
-          elif stemp - lasttemp >= stage2max:	# if heating over max threshold, go to stage 1
-            print ("Heating too quickly:", '{0:.2f}'.format((stemp - lasttemp)/3600*timeout), "°C/hr (min=", stage2max, "°C/hr)") 
+
+      elif htrstatus == htrstate[2]:		# Project temperature increase to see if we will hit target temperature -> use fan to finish
+        if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
+          if stemp + (stemp - lasttemp)+temp_tolerance/2 > target_temp:
+            print (now, "Predicted target temperature. ")
+            print (now, status_string)
+            htrtoggle(3)					
+          elif stemp - lasttemp >= stage2max:			
+            print (now, "Heating too quickly: (min=", stage2max, "°C/hr)") 
+            print (now, status_string)
             htrtoggle(1)
-      elif htrstatus == htrstate[3]:
-        timeout=fantimeout
-        if seconds >= timeout:
-            print ('{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", '{0:.2f}'.format((stemp-lasttemp)/timeout*3600), "°C/hr)")
+
+      elif htrstatus == htrstate[3]:		# Stay on for a while, then turn off.
+        if seconds%fantimeout <= 1:
+            print (now, status_string)
             htrtoggle(0)
-      elif htrstatus == htrstate[0]:
-        if stemp < target_temp - temp_tolerance:		# if temperature falls under the threshold, turn on at full heat to start 
-          print ("Temperature", temp_tolerance, "°C below setpoint. "'{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", '{0:.2f}'.format((stemp-lasttemp)/timeout*3600), "°C/hr)")
-          htrtoggle(2)
-      if seconds == idletimeout:
-        print ('{0:.2f}'.format(stemp-lasttemp), "°C since ", lasttime.strftime("%H:%M:%S"), " (", '{0:.2f}'.format((stemp-lasttemp)/timeout*3600), "°C/hr)")
+
+      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
+        if stemp < target_temp - temp_tolerance:
+          print (now, "Temperature more than", temp_tolerance, "°C below setpoint.")
+          print (now, status_string)
+          htrtoggle(1)
+        if seconds%idletimeout <= 1:
+          print (now, status_string)
       time.sleep(1)
 
 def drawstatus(element):	# Draw mode 0 (status screen)
@@ -416,6 +422,7 @@ def switch_event(event):
             playtone(3)
         elif event == RotaryEncoder.BUTTONDOWN:
             playtone(4)
+            mylcd.lcd_init()
         return
 
 # Define the switch
@@ -447,4 +454,4 @@ toggledisplay=False
 displaythread.join()
 GPIO.cleanup()
 p.stop()
-print(datetime.datetime.now(), " program exited cleanly")
+print(datetime.datetime.now(), "EXIT program exited.")
