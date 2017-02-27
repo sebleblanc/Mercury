@@ -58,7 +58,7 @@ class RotaryEncoder:
     GPIO.add_event_detect(self.pinA, GPIO.RISING, callback=self.rotation_decode, bouncetime=2) # bouncetime in mSec
 
     # setup an event detection thread for the button switch
-    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=300) # bouncetime in mSec
+    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=2) # bouncetime in mSec
 
     return
 
