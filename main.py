@@ -19,7 +19,7 @@ speaker = 12
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
-GPIO.setup(rotarybutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+GPIO.setup(rotarybutton, GPIO.IN)
 GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay3, GPIO.OUT, initial=GPIO.HIGH)
@@ -222,7 +222,7 @@ def thermostat():
           if stemp + (stemp - lasttemp) > target_temp:		
             print (now, "Predicted target temperature. ")
             print (now, status_string)
-            htrtoggle(3)
+           # htrtoggle(3)
           elif (stemp - lasttemp)*seconds < stage1min*3600:	
             print (now, "Heating too slowly: (min=", stage1min, "°C/hr)") 
             print (now, status_string)
@@ -233,7 +233,7 @@ def thermostat():
           if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature.")
             print (now, status_string)
-            htrtoggle(3)					
+          #  htrtoggle(3)					
           elif stemp - lasttemp >= stage2max:			
             print (now, "Heating too quickly: (min=", stage2max, "°C/hr)") 
             print (now, status_string)
