@@ -110,6 +110,7 @@ def getweather():
 def smoothsensordata(samples,refresh):  
     global stemp,spressure,shumidity
     sensortimeout=300
+    sensortime = datetime.datetime.now()
     while True:
       t,p,h = 0,0,0
       now = datetime.datetime.now()
@@ -200,6 +201,8 @@ def thermostat():
     stage2timeout=480
     fantimeout=180
     idletimeout=600
+    idletimeout=600
+    updatetimeout=60
 
     while run:
       now = datetime.datetime.now()
@@ -228,7 +231,7 @@ def thermostat():
       elif htrstatus == htrstate[2]:		# Project temperature increase to see if we will hit target temperature -> use fan to finish
         if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
           if stemp + (stemp - lasttemp)+temp_tolerance/2 > target_temp:
-            print (now, "Predicted target temperature. ")
+            print (now, "Predicted target temperature.")
             print (now, status_string)
             htrtoggle(3)					
           elif stemp - lasttemp >= stage2max:			
@@ -243,11 +246,13 @@ def thermostat():
 
       elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
         if stemp < target_temp - temp_tolerance:
-          print (now, "Temperature more than", temp_tolerance, "°C below setpoint.")
+          print (now, "Temperature more than", temp_tolerance + "°C below setpoint.")
           print (now, status_string)
           htrtoggle(1)
         if seconds%idletimeout <= 1:
           print (now, status_string)
+      if seconds%updatetimeout <= 1: 
+        print (now, status_string)
       time.sleep(1)
 
 def drawstatus(element):	# Draw mode 0 (status screen)
