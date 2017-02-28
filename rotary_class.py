@@ -58,7 +58,7 @@ class RotaryEncoder:
     GPIO.add_event_detect(self.pinA, GPIO.RISING, callback=self.rotation_decode, bouncetime=2) # bouncetime in mSec
 
     # setup an event detection thread for the button switch
-    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=2) # bouncetime in mSec
+    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=80) # bouncetime in mSec
 
     return
 
@@ -72,8 +72,6 @@ class RotaryEncoder:
     Switch_B = GPIO.input(self.pinB)
 
     if (Switch_A == 1) and (Switch_B == 0) : # A then B ->
-        #counter += 1
-        #print ("direction -> ")
         event=self.CLOCKWISE
         self.callback(event)
       
@@ -85,8 +83,6 @@ class RotaryEncoder:
             Switch_B = GPIO.input(self.pinB)
         
     elif (Switch_A == 1) and (Switch_B == 1): # B then A <-
-        #counter -= 1
-        #print ("direction <- ")
         event=self.ANTICLOCKWISE
         self.callback(event)
 
@@ -99,6 +95,7 @@ class RotaryEncoder:
 
   # Push button event
   def button_event(self,button):
+      sleep(0.010)
       if GPIO.input(button):
           event = self.BUTTONUP
       else:
