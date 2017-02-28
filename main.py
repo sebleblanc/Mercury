@@ -1,29 +1,46 @@
+from __future__ import print_function
 import time, pywapi, json, string, threading, csv, datetime, os, signal, sys
 import I2C_LCD_driver as i2c_charLCD
-import RPi.GPIO as GPIO
 from rotary_class import RotaryEncoder
 from bme280 import readBME280All 
+import RPi.GPIO as GPIO
 
 # Define GPIO inputs
 rotaryA = 7 
 rotaryB = 11
 rotarybutton = 13
+resetbutton = 22
 
 # Define GPIO outputs
 relay1 = 16	# --stage 1 heat (W1)
 relay2 = 18	# --stage 2 heat (W2)
 relay3 = 15	# --fan override (G)
-
 speaker = 12
+
+# Reset button event
+def reset_event(resetbutton):
+    global drawlist
+    time.sleep(0.010)
+    if GPIO.input(resetbutton):
+      playtone(3)
+      mylcd.__init__()
+      time.sleep(5)
+    else:
+      drawlist[0],drawlist[1],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True,True
+      playtone(4)
+      time.sleep(3)
+    return
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN)
+GPIO.setup(resetbutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(relay3, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(speaker, GPIO.OUT)
+GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event, bouncetime=80)
 
 # Start char LCD
 mylcd = i2c_charLCD.lcd()
@@ -32,6 +49,7 @@ mylcd.backlight(1)
 # Start PWM speaker
 p = GPIO.PWM(speaker, 600) 
 p.start(0)
+
 
 # Defaults
 setpoint = 20.5      # in celsius
@@ -43,7 +61,7 @@ target_temp = setpoint
 # todo - Load saved data 
 
 # Initialiaze variables
-tt_in,ttoffset,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
+tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
 blinker,run,toggledisplay = True,True,True
 htrstate = ['Off', 'Low Heat', 'Full Heat', 'Fan only']
 drawlist = [True, True, True, True, True]
@@ -108,8 +126,7 @@ def getweather():
 
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
 def smoothsensordata(samples,refresh):  
-    global stemp,spressure,shumidity
-    sensortimeout=300
+    global stemp,spressure,shumidity,sensortimeout
     sensortime = datetime.datetime.now()
     while True:
       t,p,h = 0,0,0
@@ -133,10 +150,10 @@ def smoothsensordata(samples,refresh):
         time.sleep(5)
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
-    global ttoffset
+    global setback, target_temp, setpoint
     while True:
       awaytemp = -1.5
-      sleepingtemp = 0
+      sleepingtemp = -0.5
 
       now = datetime.datetime.now()
       weekday = now.weekday()
@@ -153,28 +170,28 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
         whrs = customwdhrs
       else:
         whrs = []
-        ttoffset = 0
+        setback = 0
       if hour in whrs:
-        ttoffset = awaytemp
+        setback = awaytemp
       elif hour+1 in whrs:		# temp boost in the morning
-        ttoffset = 1
+        setback = 1
       else:
-        ttoffset = 0
-      target_temp = setpoint + ttoffset
+        setback = 0
+      target_temp = setpoint + setback
+      drawlist[2] = True
       time.sleep(300)
-
 
 def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs, drawlist, target_temp
     now = datetime.datetime.now()
     if state == 0:
-        GPIO.output(relay1, GPIO.HIGH)
-        GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay2, GPIO.HIGH)		# Just to be safe, always turn off stage 2 first
+        GPIO.output(relay1, GPIO.HIGH)		# 
         GPIO.output(relay3, GPIO.HIGH)
         htrstatus = htrstate[0]
     elif state == 1:
-        GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay1, GPIO.LOW)
         GPIO.output(relay3, GPIO.HIGH)
         htrstatus = htrstate[1]
     elif state == 2:
@@ -184,8 +201,8 @@ def htrtoggle(state):
         htrstatus = htrstate[2]
     elif state == 3:
         GPIO.output(relay3, GPIO.LOW)	# turn override fan on before shutting off heater fan (to avoid shutting fan off for split-second)
-        GPIO.output(relay1, GPIO.HIGH)
         GPIO.output(relay2, GPIO.HIGH)
+        GPIO.output(relay1, GPIO.HIGH)
         htrstatus = htrstate[3]
         
     drawlist[0] = True		# -> redraw the screen and remember/reset time, heater state, and temperature
@@ -193,16 +210,15 @@ def htrtoggle(state):
     lhs=[now, htrstatus, stemp]
 
 def thermostat():
-    global run, target_temp, ttoffset, stemp, temp_tolerance, htrstatus, htrstate, lhs
+    global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
     stage1min = 0.01		# minimum threshold (in °C/hour) under which we switch to stage 2
-    stage2max = 1		# maximum threshold (in °C/hour) over which we switch to stage 1
+    stage2max = 0.5		# maximum threshold (in °C/hour) over which we switch to stage 1
     time.sleep(5)
-    stage1timeout=600
+    stage1timeout=360		# time to wait before checking if we should change states
     stage2timeout=480
     fantimeout=80
     idletimeout=600
-    idletimeout=600
-    updatetimeout=180
+    updatetimeout=180		# stdout updates
 
     while run:
       now = datetime.datetime.now()
@@ -211,50 +227,58 @@ def thermostat():
       lasttime = lhs[0]
       lasttemp = lhs[2]
       status_string = '{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
-      if stemp >= target_temp:			# Shut off the heater if temperature reached, 
-        if htrstatus !=  htrstate[0]:  		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
-           print (now, "Temperature reached.")
-           print (now, status_string)
-           htrtoggle(0)
 
-      elif htrstatus == htrstate[1]:		# Project temperature increase, if we will hit target temperature -> use fan to finish
+      if stemp >= target_temp:			# Shut off the heater if temperature reached, 
+        if htrstatus !=  htrstate[0] and htrstatus != htrstate[3]: 		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
+           print (now, "Temperature reached.")  # use fan to cool off elements
+           print (now, status_string)
+           htrtoggle(3)
+        
+      elif htrstatus == htrstate[1]:		# Project temperature increase, if we will hit target temperature
+        print (('{0:.1f}'.format(seconds%stage1timeout)), "    ", end='\r')
         if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
           if stemp + (stemp - lasttemp) > target_temp:		
             print (now, "Predicted target temperature. ")
             print (now, status_string)
-           # htrtoggle(3)
           elif (stemp - lasttemp)*seconds < stage1min*3600:	
             print (now, "Heating too slowly: (min=", stage1min, "°C/hr)") 
             print (now, status_string)
             htrtoggle(2)
 
-      elif htrstatus == htrstate[2]:		# Project temperature increase to see if we will hit target temperature -> use fan to finish
+      elif htrstatus == htrstate[2]:
+        print ('{0:.1f}'.format(seconds%stage2timeout), "    ", end='\r')
         if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
           if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature.")
             print (now, status_string)
-          #  htrtoggle(3)					
+            htrtoggle(1)
           elif stemp - lasttemp >= stage2max:			
             print (now, "Heating too quickly: (min=", stage2max, "°C/hr)") 
             print (now, status_string)
             htrtoggle(1)
 
       elif htrstatus == htrstate[3]:		# Stay on for a while, then turn off.
-        if seconds%fantimeout <= 1:
+        print ('{0:.1f}'.format(seconds%fantimeout), "    ", end='\r')
+        if seconds >= fantimeout:
             print (now, status_string)
             htrtoggle(0)
 
-      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
+      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at high heat to start
+        print ('{0:.1f}'.format(seconds%idletimeout), "    ", end='\r')
         if stemp < target_temp - temp_tolerance:
           print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
           print (now, status_string)
-          htrtoggle(1)
+          htrtoggle(2)
         if seconds%idletimeout <= 1:
           print (now, status_string)
       if seconds%updatetimeout <= 1: 
         print (now, status_string)
-      time.sleep(1)
+      else:
+        print ('{0:.1f}'.format(seconds%idletimeout), "    ", end='\r')
 
+      wait_time = (seconds%1)
+      time.sleep(1.5-wait_time)		# sleep until next half second
+      
 def drawstatus(element):	# Draw mode 0 (status screen)
 #    print ("refreshing screen element ", element)
     global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus, displayed_time, blinker
@@ -370,10 +394,11 @@ def redraw():
     time.sleep(refreshrate)
     
 def ui_input():
-  global tt_in, setpoint, ttoffset, target_temp, drawlist
-  setpoint += tt_in
+  global tt_in, setpoint, setback, target_temp, drawlist
+  if setpoint+tt_in >= 0 <= 30:
+    setpoint += tt_in
   tt_in=0
-  target_temp = setpoint + ttoffset
+  target_temp = setpoint + setback
   drawlist[2] = True    
 
 # Define rotary actions depending on current mode
@@ -453,6 +478,13 @@ thermostatthread.start()
 
 while run:
   time.sleep(0.5)
+
+print ("Aborting...")
+
+if htrstatus != htrstate[0]:
+  print("Cooling down elements before turning off blower...")
+  htrtoggle(3)
+  time.sleep(80)
 
 toggledisplay=False
 displaythread.join()
