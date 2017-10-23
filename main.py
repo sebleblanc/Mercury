@@ -131,24 +131,25 @@ def heartbeat():
     global htrstatus, htrstate, drawlist, refetch, heartbeatinterval
     while run:
       while refetch:
-        getstatus = 0
+        getstatus = None
+        #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
         except:
           print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
-          getstatus = None
         finally:
-          lastfetch = datetime.datetime.now()
-          if getstatus:
+          if getstatus >= 0:
+              #print("updating htr state: got", getstatus)
+              lastfetch = datetime.datetime.now()
               htrstatus = htrstate[getstatus]
               drawlist[0] = True
               refetch = False
-        time.sleep(0.3)
+              time.sleep(0.3)
 
       while not refetch:
         now = datetime.datetime.now()
         if (now-lastfetch).total_seconds() >= heartbeatinterval:
-          refetch=True
+          refetch = True
         else :
           time.sleep(2)
 
@@ -213,18 +214,24 @@ def htrtoggle(state):
     now = datetime.datetime.now()
     refetch = True
     while run and refetch:
+        print ("waiting for refetch:", refetch)
         time.sleep(0.1)
 
     if htrstatus != htrstate[state]:
         output = (chr(state+48)+'\n').encode("utf-8")
         ser.write(output)
+        time.sleep(0.1)
         refetch = True
-        while run and htrstatus != htrstate[state]:
-           print ("sent", output, "waiting", htrstatus, "target", state)
-           time.sleep(1)
-        drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
-        print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
-        lhs=[now, htrstatus, stemp]
+        print ("sent state change to arduino:", state)
+        while run and refetch:
+          time.sleep(0.1)
+          print ("waiting for refetch again...")
+        if htrstatus != htrstate[state]:
+          print ("htr update failed: got", htrstatus, "waiting for", htrstate[state])
+        else:
+          drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
+          print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
+          lhs=[now, htrstatus, stemp]
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
