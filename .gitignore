@@ -8,3 +8,4 @@ mercury.log
 .piolibdeps
 .clang_complete
 .gcc-flags.json
+__pycache__/
