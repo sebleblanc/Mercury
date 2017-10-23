@@ -87,11 +87,11 @@ void loop(){
     }
   if ((currentstate == 1) && (((unsigned long)(currentMillis - previousFanTime)) >= cooldown)) {
         currentstate = 0;
-        hvacmode(0);
+        currentstate = hvacmode(0);
     }
   else if ((currentstate > 1) && (((unsigned long)(currentMillis - LastMessage)) >= timeout)){
         currentstate = 0;
-        hvacmode(0);
+        currentstate = hvacmode(0);
       }
   else {
     delay(10);
