@@ -4,7 +4,7 @@ from bme280 import readBME280All
 from math import floor
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
-import time, pywapi, json, string, threading, csv, datetime, os, signal, sys
+import time, pywapi, json, string, threading, csv, datetime, os, signal, sys, serial, struct
 
 # Define GPIO inputs
 rotaryA = 7 
@@ -13,25 +13,22 @@ rotarybutton = 13
 resetbutton = 22
 
 # Define GPIO outputs
-relay1 = 16	# --stage 1 heat (W1)
-relay2 = 18	# --stage 2 heat (W2)
-relay3 = 15	# --fan override (G)
 speaker = 12
+
+# Arduino Serial connect
+ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 0.1)
 
 # Reset button event
 def reset_event(resetbutton):
     global drawlist
     if GPIO.input(resetbutton):
       mylcd.__init__()
-      time.sleep(3)
+      time.sleep(2)
+      playtone(5)
+      time.sleep(1)
       drawlist[0],drawlist[1],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True,True
-      playtone(4)
     else:
-      playtone(3)
-      time.sleep(5)
-      for i in range(0,3):  
-        playtone(3)
-        time.sleep(0.1)
+      playtone(1)
     return
 
 GPIO.setmode(GPIO.BOARD)
@@ -39,11 +36,8 @@ GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN)
 GPIO.setup(resetbutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
-GPIO.setup(relay1, GPIO.OUT, initial=GPIO.HIGH)
-GPIO.setup(relay2, GPIO.OUT, initial=GPIO.HIGH)
-GPIO.setup(relay3, GPIO.OUT, initial=GPIO.HIGH)
 GPIO.setup(speaker, GPIO.OUT)
-GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event, bouncetime=5000)
+GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event, bouncetime=3000)
 
 # Start char LCD
 mylcd = i2c_charLCD.lcd()
@@ -55,34 +49,27 @@ p.start(0)
 
 
 # Defaults
-setpoint = 20.0      # in celsius
+setpoint = 20      # in celsius
 sensortimeout = 300
+heartbeattimeout = 3600
 temp_tolerance = 0.9	
-frefreshrate = 0.01 		# in seconds
+refreshrate = 0.01 		# in seconds
 target_temp = setpoint
 
 # todo - Load saved data 
 
 # Initialiaze variables
 tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
-blinker,run,toggledisplay = True,True,True
-htrstate = ['Off', 'Low Heat', 'Full Heat', 'Fan only']
-drawlist = [True, True, True, True, True]
+blinker,run,toggledisplay,refetch = True,True,True,True
+htrstate = ['Off', 'Fan only', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
 
-sensorchecktime = datetime.datetime.now()
-stemp = False
-while not stemp:
-  try:
-    stemp,spressure,shumidity = readBME280All()
-  except:
-    print (datetime.datetime.now(),"WARNING: sensor failure")
-    time.sleep(1)
-  if (sensorchecktime-datetime.datetime.now()).total_seconds() >= 10:
-    print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
-    htrtoggle(0)
-    run = False
-lhs = [datetime.datetime.now(), htrstatus,  stemp] 	# endtime, last state, last temp
+drawlist = [True, True, True, True, True]
+#	0 Heater status
+#	1 Time
+#	2 Setpoint
+#	3 Sensor data
+#	4 Weather data
 
 # OS signal handler
 def handler_stop_signals(signum, frame):
@@ -111,27 +98,61 @@ def playtone(tone):
     p.ChangeDutyCycle(50)
     time.sleep(0.05)
     p.ChangeDutyCycle(0)
+  elif tone == 5:
+    for i in range(0,3):  
+      playtone(3)
+      time.sleep(0.1)
 
 # Get weather from weather API
 def getweather():  
     global latest_weather
     while True:
       try:
-        #print (datetime.datetime.now(),"updating weather data...")
+        print (datetime.datetime.now(),"updating weather data...")
         latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
         time.sleep(3)
       except:
         print (datetime.datetime.now(),"ERROR: weather update failure")
       finally:
-        #print (datetime.datetime.now(),"weather updated from weather.com")
+        print (datetime.datetime.now(),"weather updated from weather.com")
         drawlist[4] = True
         time.sleep(900)
 
+def fetchhtrstate():
+  ser.write(b"9\n")
+  time.sleep(0.1)
+  response = ser.readline()
+  state = struct.unpack('>BBB', response)[0]
+  time.sleep(0.1)
+  return state-48
+
+def heartbeat():
+    global htrstatus, htrstate, drawlist, refetch, heartbeattimeout
+    while True:
+      getstatus = 0
+      while refetch:
+        try:
+          getstatus = fetchhtrstate()
+        except:
+          print (datetime.datetime.now(),"ERROR: failed to contact arduino!")
+        finally:
+          htrtime = datetime.datetime.now()
+          htrstatus = htrstate[getstatus]
+          drawlist[0] = True
+          refetch = False 
+        time.sleep(0.3)
+      
+      while not refetch:
+        now = datetime.datetime.now()
+        if (now-htrtime).total_seconds() >= heartbeattimeout:
+          refetch=True
+        time.sleep(1)  
+
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
 def smoothsensordata(samples,refresh):  
-    global stemp,spressure,shumidity,sensortimeout
+    global stemp,spressure,shumidity,sensortimeout,run
     sensortime = datetime.datetime.now()
-    while True:
+    while run:
       t,p,h = 0,0,0
       now = datetime.datetime.now()
       try:
@@ -146,7 +167,6 @@ def smoothsensordata(samples,refresh):
         print (datetime.datetime.now(),"WARNING: sensor failure")
         if (now-sensortime).total_seconds() >= sensortimeout:
           print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
-          htrtoggle(0)
           run = False
       finally:
         drawlist[3] = True 
@@ -154,7 +174,7 @@ def smoothsensordata(samples,refresh):
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     global setback, target_temp, setpoint
-    while True:
+    while run:
       awaytemp = -1.5
       sleepingtemp = -0.5
 
@@ -185,43 +205,51 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       time.sleep(300)
 
 def htrtoggle(state):
-    global htrstatus, stemp, htrstate, lhs, drawlist, target_temp
+    global htrstatus, stemp, htrstate, lhs, drawlist, target_temp, refetch
     now = datetime.datetime.now()
-    if state == 0:
-        GPIO.output(relay2, GPIO.HIGH)		# Just to be safe, always turn off stage 2 first
-        GPIO.output(relay1, GPIO.HIGH)		# 
-        GPIO.output(relay3, GPIO.HIGH)
-        htrstatus = htrstate[0]
-    elif state == 1:
-        GPIO.output(relay2, GPIO.HIGH)
-        GPIO.output(relay1, GPIO.LOW)
-        GPIO.output(relay3, GPIO.HIGH)
-        htrstatus = htrstate[1]
+    getstatus = 0
+    if state == 0:		
+       ser.write(b"0\n")	# off
+    elif state == 1:             
+       ser.write(b"1\n")	# fan
     elif state == 2:
-        GPIO.output(relay1, GPIO.LOW)
-        GPIO.output(relay2, GPIO.LOW)
-        GPIO.output(relay3, GPIO.HIGH)
-        htrstatus = htrstate[2]
+       ser.write(b"2\n")	# st1
     elif state == 3:
-        GPIO.output(relay3, GPIO.LOW)	# turn override fan on before shutting off heater fan (to avoid shutting fan off for split-second)
-        GPIO.output(relay2, GPIO.HIGH)
-        GPIO.output(relay1, GPIO.HIGH)
-        htrstatus = htrstate[3]
-        
-    drawlist[0] = True		# -> redraw the screen and remember/reset time, heater state, and temperature
-    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
+       ser.write(b"3\n")	# st2
+    time.sleep(0.2)
+
+    refetch=True
+    drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
+    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstate[state] + ".")
     lhs=[now, htrstatus, stemp]
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
     stage1min = 0.05		# minimum threshold (in °C/hour) under which we switch to stage 2
     stage2max = 0.5		# maximum threshold (in °C/hour) over which we switch to stage 1
-    time.sleep(2)
-    stage1timeout=360		# time to wait before checking if we should change states
-    stage2timeout=480
-    fantimeout=80
+    stage1timeout=600		# time to wait before checking if we should change states
+    stage2timeout=600
+    fantimeout=0
     idletimeout=600
     updatetimeout=600		# stdout updates
+    
+    displaythread.start()
+    hvacthread.start()
+
+    stemp = False
+    sensorthread.start()
+    while run and not stemp:
+      time.sleep(1)   
+
+    while run and not htrstatus:
+      time.sleep(1)   
+
+    lhs = [datetime.datetime.now(), htrstatus,  stemp] 	# endtime, last state, last temp
+
+    schedulethread.start()
+    weatherthread.start()
+
+    time.sleep(3)
 
     while run:
       now = datetime.datetime.now()
@@ -233,12 +261,12 @@ def thermostat():
 
 			# Shut off the heater if temperature reached, 
          		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
-      if stemp >= target_temp+(temp_tolerance/3) and htrstatus !=  htrstate[0] and htrstatus != htrstate[3]:
+      if stemp >= target_temp+(temp_tolerance/3) and htrstatus !=  htrstate[0] and htrstatus != htrstate[1]:
         print (now, "Temperature reached.")  # use fan to cool off elements
         print (now, status_string)
-        htrtoggle(3)
+        htrtoggle(0)
         
-      elif htrstatus == htrstate[1]:		# Project temperature increase, if we will hit target temperature
+      elif htrstatus == htrstate[2]:		# Project temperature increase, if we will hit target temperature
 #        print (int(stage1timeout-floor(seconds%stage1timeout)-1), "    Stage 1    ", end='\r')
         if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
           if stemp + (stemp - lasttemp) > target_temp:		
@@ -247,27 +275,28 @@ def thermostat():
           elif (stemp - lasttemp)*seconds < stage1min*3600:	
             print (now, "Heating too slowly: (min=", stage1min, "°C/hr)") 
             print (now, status_string)
-            htrtoggle(2)
+            htrtoggle(3)
 
-      elif htrstatus == htrstate[2]:
+      elif htrstatus == htrstate[3]:
 #        print (int(stage2timeout-floor(seconds%stage2timeout)-1), "    Stage 2    ", end='\r')
         if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
           if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature.")
             print (now, status_string)
-            htrtoggle(1)
+            htrtoggle(2)
           elif (stemp - lasttemp)*seconds >= stage2max*3600:			
             print (now, "Heating too quickly: (min=", stage2max, "°C/hr)") 
             print (now, status_string)
-            htrtoggle(1)
+            htrtoggle(2)
 
-      elif htrstatus == htrstate[3]:		# Stay on for a while, then turn off.
+      elif htrstatus == htrstate[1]:		
+        pass
 #        print (int(fantimeout-floor(seconds%fantimeout)-1), "    Fan    ", end='\r')
-        if seconds >= fantimeout:
-            print (now, status_string)
-            htrtoggle(0)
+#        if seconds >= fantimeout:
+#            print (now, status_string)
+#            htrtoggle(0)
 
-      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at high heat to start
+      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
 #        print (int(idletimeout-floor(seconds%idletimeout)-1), "    Idle    ", end='\r')
         if stemp < target_temp - temp_tolerance:
           print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
@@ -311,7 +340,8 @@ def drawstatus(element):	# Draw mode 0 (status screen)
     elif element == 2:
       tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
       tts = '{0:.1f}'.format(setpoint) + chr(223) + "C"
-      mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
+      mylcd.lcd_display_string(tts.center(20), 2)
+#      mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
 								# 3 - Sensor data
     elif element == 3:
       if stemp == None:
@@ -417,11 +447,11 @@ def rotaryevent(event):
       if uimode == 0:
         global tt_in
         if event == 1:
-            tt_in += 0.05
+            tt_in += 0.1
             playtone(1)
 
         elif event == 2:
-            tt_in -= 0.05
+            tt_in -= 0.1
             playtone(2)
         ui_input()
 
@@ -465,23 +495,19 @@ def switch_event(event):
 # Define the switch
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
-
+hvacthread = threading.Thread(target=heartbeat)
 schedulethread = threading.Thread(target=checkschedule)
-sensorthread = threading.Thread(target=smoothsensordata, args=(5,2))  # (no. of samples, period time)
+sensorthread = threading.Thread(target=smoothsensordata, args=(3,3))  # (no. of samples, period time)
 thermostatthread = threading.Thread(target=thermostat)
 displaythread = threading.Thread(target=redraw)
 weatherthread = threading.Thread(target=getweather)
 
 weatherthread.setDaemon(True)
 sensorthread.setDaemon(True)
+hvacthread.setDaemon(True)
 thermostatthread.setDaemon(True)
 schedulethread.setDaemon(True)
 
-sensorthread.start()
-schedulethread.start()
-weatherthread.start()
-displaythread.start()
-time.sleep(4)
 thermostatthread.start()
 
 while run:
@@ -491,11 +517,12 @@ print ("Aborting...")
 
 if htrstatus != htrstate[0]:
   print("Cooling down elements before turning off blower...")
-  htrtoggle(3)
-  time.sleep(80)
+  htrtoggle(0)
+#  time.sleep(80)
 
 toggledisplay=False
 displaythread.join()
 GPIO.cleanup()
+ser.close()
 p.stop()
 print(datetime.datetime.now(), "EXIT: program exited.")

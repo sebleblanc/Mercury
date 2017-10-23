@@ -24,7 +24,7 @@ from ctypes import c_short
 from ctypes import c_byte
 from ctypes import c_ubyte
 
-DEVICE = 0x76 # Default device I2C address
+DEVICE = 0x77 # Default device I2C address
 
 
 bus = smbus.SMBus(1) # Rev 2 Pi, Pi 2 & Pi 3 uses bus 1
