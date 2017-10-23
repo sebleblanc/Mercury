@@ -49,7 +49,7 @@ p.start(0)
 
 
 # Defaults
-setpoint = 22      # in celsius
+setpoint = 20      # in celsius
 sensortimeout = 300
 heartbeatinterval = 10
 temp_tolerance = 0.9
@@ -139,9 +139,10 @@ def heartbeat():
           getstatus = None
         finally:
           lastfetch = datetime.datetime.now()
-          htrstatus = htrstate[getstatus]
-          drawlist[0] = True
-          refetch = False
+          if getstatus:
+              htrstatus = htrstate[getstatus]
+              drawlist[0] = True
+              refetch = False
         time.sleep(0.3)
 
       while not refetch:

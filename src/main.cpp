@@ -6,6 +6,7 @@ unsigned long timeout = 3600000;
 unsigned long cooldown = 45000; // fan cooldown after heating
 unsigned long previousFanTime = millis();
 unsigned long currentMillis = millis();
+unsigned long LastMessage = millis();
 int currentstate = 0;
 int debounce = 500; //time between state changes
 unsigned int integerValue=0;  // Max value is 65535
@@ -64,8 +65,7 @@ void setup() {
   }
 
 void loop(){
-  unsigned long currentMillis = millis();
-  unsigned long LastMessage;
+    currentMillis=millis();
     if (Serial.available() > 0) {   // something came across serial
      integerValue = 0;         // throw away previous integerValue
      while(1) {            // force into a loop until 'n' is received
@@ -76,7 +76,7 @@ void loop(){
        // convert ASCII to integer, add, and shift left 1 decimal place
        integerValue = ((incomingByte - 48) + integerValue);
        }
-    LastMessage = millis();
+    LastMessage = currentMillis;
     if (integerValue == 9){
         Serial.println(currentstate);  // report current state
         }
