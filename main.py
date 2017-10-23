@@ -49,7 +49,7 @@ p.start(0)
 
 
 # Defaults
-setpoint = 20      # in celsius
+setpoint = 22      # in celsius
 sensortimeout = 300
 heartbeatinterval = 10
 temp_tolerance = 0.9
@@ -119,8 +119,9 @@ def getweather():
         time.sleep(900)
 
 def fetchhtrstate():
-  ser.write(b"9\n")
-  time.sleep(0.1)
+  output = (chr(9+48)+'\n').encode("utf-8")
+  ser.write(output)
+  time.sleep(0.3)
   response = ser.readline()
   state = struct.unpack('>BBB', response)[0]
   time.sleep(0.1)
@@ -128,13 +129,14 @@ def fetchhtrstate():
 
 def heartbeat():
     global htrstatus, htrstate, drawlist, refetch, heartbeatinterval
-    while True:
+    while run:
       while refetch:
         getstatus = 0
         try:
           getstatus = fetchhtrstate()
         except:
           print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
+          getstatus = None
         finally:
           lastfetch = datetime.datetime.now()
           htrstatus = htrstate[getstatus]
@@ -146,7 +148,8 @@ def heartbeat():
         now = datetime.datetime.now()
         if (now-lastfetch).total_seconds() >= heartbeatinterval:
           refetch=True
-        time.sleep(1)
+        else :
+          time.sleep(2)
 
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
 def smoothsensordata(samples,refresh):
@@ -207,28 +210,27 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
 def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs, drawlist, target_temp, refetch
     now = datetime.datetime.now()
-    getstatus = 0
-    if state == 0:
-       ser.write(b"0\n")	# off
-    elif state == 1:
-       ser.write(b"1\n")	# fan
-    elif state == 2:
-       ser.write(b"2\n")	# st1
-    elif state == 3:
-       ser.write(b"3\n")	# st2
-    time.sleep(0.2)
+    refetch = True
+    while run and refetch:
+        time.sleep(0.1)
 
-    refetch=True
-    drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
-    print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstate[state] + ".")
-    lhs=[now, htrstatus, stemp]
+    if htrstatus != htrstate[state]:
+        output = (chr(state+48)+'\n').encode("utf-8")
+        ser.write(output)
+        refetch = True
+        while run and htrstatus != htrstate[state]:
+           print ("sent", output, "waiting", htrstatus, "target", state)
+           time.sleep(1)
+        drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
+        print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
+        lhs=[now, htrstatus, stemp]
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
     stage1min = 0.05		# minimum threshold (in °C/hour) under which we switch to stage 2
     stage2max = 0.5		# maximum threshold (in °C/hour) over which we switch to stage 1
-    stage1timeout=600		# time to wait before checking if we should change states
-    stage2timeout=600
+    stage1timeout=180		# time to wait before checking if we should change states
+    stage2timeout=180
     fantimeout=0
     idletimeout=600
     updatetimeout=600		# stdout updates
@@ -262,7 +264,7 @@ def thermostat():
 			# Shut off the heater if temperature reached,
          		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
       if stemp >= target_temp+(temp_tolerance/3) and htrstatus !=  htrstate[0] and htrstatus != htrstate[1]:
-        print (now, "Temperature reached.")  # use fan to cool off elements
+        print (now, "Temperature reached.")
         print (now, status_string)
         htrtoggle(0)
 
