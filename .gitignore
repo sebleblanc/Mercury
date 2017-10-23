@@ -4,3 +4,7 @@ hvac control unit/.clang_complete
 hvac control unit/.gcc-flags.json
 mercury.conf
 mercury.log
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json

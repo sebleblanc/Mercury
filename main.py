@@ -1,13 +1,13 @@
 from __future__ import print_function
 from rotary_class import RotaryEncoder
-from bme280 import readBME280All 
+from bme280 import readBME280All
 from math import floor
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 import time, pywapi, json, string, threading, csv, datetime, os, signal, sys, serial, struct
 
 # Define GPIO inputs
-rotaryA = 7 
+rotaryA = 7
 rotaryB = 11
 rotarybutton = 13
 resetbutton = 22
@@ -44,19 +44,19 @@ mylcd = i2c_charLCD.lcd()
 mylcd.backlight(1)
 
 # Start PWM speaker
-p = GPIO.PWM(speaker, 600) 
+p = GPIO.PWM(speaker, 600)
 p.start(0)
 
 
 # Defaults
 setpoint = 20      # in celsius
 sensortimeout = 300
-heartbeattimeout = 3600
-temp_tolerance = 0.9	
+heartbeatinterval = 10
+temp_tolerance = 0.9
 refreshrate = 0.01 		# in seconds
 target_temp = setpoint
 
-# todo - Load saved data 
+# todo - Load saved data
 
 # Initialiaze variables
 tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
@@ -99,12 +99,12 @@ def playtone(tone):
     time.sleep(0.05)
     p.ChangeDutyCycle(0)
   elif tone == 5:
-    for i in range(0,3):  
+    for i in range(0,3):
       playtone(3)
       time.sleep(0.1)
 
 # Get weather from weather API
-def getweather():  
+def getweather():
     global latest_weather
     while True:
       try:
@@ -127,29 +127,29 @@ def fetchhtrstate():
   return state-48
 
 def heartbeat():
-    global htrstatus, htrstate, drawlist, refetch, heartbeattimeout
+    global htrstatus, htrstate, drawlist, refetch, heartbeatinterval
     while True:
-      getstatus = 0
       while refetch:
+        getstatus = 0
         try:
           getstatus = fetchhtrstate()
         except:
-          print (datetime.datetime.now(),"ERROR: failed to contact arduino!")
+          print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
         finally:
-          htrtime = datetime.datetime.now()
+          lastfetch = datetime.datetime.now()
           htrstatus = htrstate[getstatus]
           drawlist[0] = True
-          refetch = False 
+          refetch = False
         time.sleep(0.3)
-      
+
       while not refetch:
         now = datetime.datetime.now()
-        if (now-htrtime).total_seconds() >= heartbeattimeout:
+        if (now-lastfetch).total_seconds() >= heartbeatinterval:
           refetch=True
-        time.sleep(1)  
+        time.sleep(1)
 
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
-def smoothsensordata(samples,refresh):  
+def smoothsensordata(samples,refresh):
     global stemp,spressure,shumidity,sensortimeout,run
     sensortime = datetime.datetime.now()
     while run:
@@ -169,7 +169,7 @@ def smoothsensordata(samples,refresh):
           print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
           run = False
       finally:
-        drawlist[3] = True 
+        drawlist[3] = True
         time.sleep(5)
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
@@ -181,7 +181,7 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       now = datetime.datetime.now()
       weekday = now.weekday()
       hour = now.hour + 1		# react an hour in advance
-    
+
       workdays=range(0,4)		# workdays
       workhours=range(6,17)
       customwd=range(4,5) 		# custom workday(s)
@@ -208,9 +208,9 @@ def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs, drawlist, target_temp, refetch
     now = datetime.datetime.now()
     getstatus = 0
-    if state == 0:		
+    if state == 0:
        ser.write(b"0\n")	# off
-    elif state == 1:             
+    elif state == 1:
        ser.write(b"1\n")	# fan
     elif state == 2:
        ser.write(b"2\n")	# st1
@@ -232,17 +232,17 @@ def thermostat():
     fantimeout=0
     idletimeout=600
     updatetimeout=600		# stdout updates
-    
+
     displaythread.start()
     hvacthread.start()
 
     stemp = False
     sensorthread.start()
     while run and not stemp:
-      time.sleep(1)   
+      time.sleep(1)
 
     while run and not htrstatus:
-      time.sleep(1)   
+      time.sleep(1)
 
     lhs = [datetime.datetime.now(), htrstatus,  stemp] 	# endtime, last state, last temp
 
@@ -259,21 +259,21 @@ def thermostat():
       lasttemp = lhs[2]
       status_string = '{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
 
-			# Shut off the heater if temperature reached, 
+			# Shut off the heater if temperature reached,
          		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
       if stemp >= target_temp+(temp_tolerance/3) and htrstatus !=  htrstate[0] and htrstatus != htrstate[1]:
         print (now, "Temperature reached.")  # use fan to cool off elements
         print (now, status_string)
         htrtoggle(0)
-        
+
       elif htrstatus == htrstate[2]:		# Project temperature increase, if we will hit target temperature
 #        print (int(stage1timeout-floor(seconds%stage1timeout)-1), "    Stage 1    ", end='\r')
         if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
-          if stemp + (stemp - lasttemp) > target_temp:		
+          if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature. ")
             print (now, status_string)
-          elif (stemp - lasttemp)*seconds < stage1min*3600:	
-            print (now, "Heating too slowly: (min=", stage1min, "°C/hr)") 
+          elif (stemp - lasttemp)*seconds < stage1min*3600:
+            print (now, "Heating too slowly: (min=", stage1min, "°C/hr)")
             print (now, status_string)
             htrtoggle(3)
 
@@ -284,12 +284,12 @@ def thermostat():
             print (now, "Predicted target temperature.")
             print (now, status_string)
             htrtoggle(2)
-          elif (stemp - lasttemp)*seconds >= stage2max*3600:			
-            print (now, "Heating too quickly: (min=", stage2max, "°C/hr)") 
+          elif (stemp - lasttemp)*seconds >= stage2max*3600:
+            print (now, "Heating too quickly: (min=", stage2max, "°C/hr)")
             print (now, status_string)
             htrtoggle(2)
 
-      elif htrstatus == htrstate[1]:		
+      elif htrstatus == htrstate[1]:
         pass
 #        print (int(fantimeout-floor(seconds%fantimeout)-1), "    Fan    ", end='\r')
 #        if seconds >= fantimeout:
@@ -306,15 +306,15 @@ def thermostat():
           print (now, status_string)
       else:
         print (now, "ERROR: Bad heater status!", htrstatus, "not in", htrstate)
-         
-      if seconds%updatetimeout <= 1: 
+
+      if seconds%updatetimeout <= 1:
         print (now, status_string)
 #      else:
 #        print (int(seconds%idletimeout), "    ", end='\r')
 
       wait_time = (seconds%1)
       time.sleep(1.5-wait_time)		# sleep until next half second
-      
+
 def drawstatus(element):	# Draw mode 0 (status screen)
 #    print ("refreshing screen element ", element)
     global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus, displayed_time, blinker
@@ -390,14 +390,14 @@ def drawweather():
       outtemp = '---' + chr(223) +"C"
       cc = "N/A"
       outhumidity = "---%"
- 
+
     outtempraw = int(latest_weather['current_conditions'] ['temperature'])
     outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
     cc = latest_weather['current_conditions']['text']
     outhumidity = int(latest_weather['current_conditions']['humidity'])
     dayofweek = latest_weather['forecasts'][forecast_day]['day_of_week']
     date = latest_weather['forecasts'][forecast_day]['date']
-    high = latest_weather['forecasts'][forecast_day]['high'] + chr(223) + "C" 
+    high = latest_weather['forecasts'][forecast_day]['high'] + chr(223) + "C"
     low = latest_weather['forecasts'][forecast_day]['low'] + chr(223) + "C"
     sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
 
@@ -430,14 +430,14 @@ def redraw():
       elif (now - displayed_time) >= datetime.timedelta(seconds = 1):
         drawlist[1] = 2
     time.sleep(refreshrate)
-    
+
 def ui_input():
   global tt_in, setpoint, setback, target_temp, drawlist
   if setpoint+tt_in >= 0 <= 30:
     setpoint += tt_in
   tt_in=0
   target_temp = setpoint + setback
-  drawlist[2] = True    
+  drawlist[2] = True
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
@@ -468,7 +468,7 @@ def rotaryevent(event):
             if forecast_day >= 1:
               forecast_day = forecast_day - 1
               if forecast_day < 0:
-                forecast_day = 0 
+                forecast_day = 0
               else:
                 playtone(2)
 
