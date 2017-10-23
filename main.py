@@ -213,8 +213,8 @@ def htrtoggle(state):
     global htrstatus, stemp, htrstate, lhs, drawlist, target_temp, refetch
     now = datetime.datetime.now()
     refetch = True
+    print ("waiting for refetch:", refetch)
     while run and refetch:
-        print ("waiting for refetch:", refetch)
         time.sleep(0.1)
 
     if htrstatus != htrstate[state]:
@@ -223,10 +223,10 @@ def htrtoggle(state):
         time.sleep(0.1)
         refetch = True
         print ("sent state change to arduino:", state)
+        print ("waiting for refetch again...")
         while run and refetch:
           time.sleep(0.1)
-          print ("waiting for refetch again...")
-        if htrstatus != htrstate[state]:
+        if htrstatus != htrstate[1] and htrstatus != htrstate[state]:
           print ("htr update failed: got", htrstatus, "waiting for", htrstate[state])
         else:
           drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
