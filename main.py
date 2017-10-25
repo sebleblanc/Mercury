@@ -309,7 +309,7 @@ def thermostat():
 #            print (now, status_string)
 #            htrtoggle(0)
 
-      elif htrstatus == htrstate[0] || htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on at low heat to start
+      elif htrstatus == htrstate[0] or htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on at low heat to start
 #        print (int(idletimeout-floor(seconds%idletimeout)-1), "    Idle    ", end='\r')
         if stemp < target_temp - temp_tolerance:
           print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")

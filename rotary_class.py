@@ -29,7 +29,7 @@ import RPi.GPIO as GPIO
 from time import sleep
 
 class RotaryEncoder:
-  
+
   CLOCKWISE=1
   ANTICLOCKWISE=2
   BUTTONDOWN=3
@@ -38,11 +38,11 @@ class RotaryEncoder:
   # GPIO Ports
 
   def __init__(self,pinA,pinB,button,callback):
-    
+
     self.pinA = pinA
     self.pinB = pinB
     self.button = button
-    self.callback = callback    
+    self.callback = callback
 
     GPIO.setwarnings(True)
 
@@ -55,7 +55,7 @@ class RotaryEncoder:
     GPIO.setup(self.button, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
     # setup an event detection thread for the A encoder switch
-    GPIO.add_event_detect(self.pinA, GPIO.RISING, callback=self.rotation_decode, bouncetime=2) # bouncetime in mSec
+    GPIO.add_event_detect(self.pinA, GPIO.RISING, callback=self.rotation_decode, bouncetime=1) # bouncetime in mSec
 
     # setup an event detection thread for the button switch
     GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_event, bouncetime=80) # bouncetime in mSec
@@ -65,7 +65,7 @@ class RotaryEncoder:
 
   def rotation_decode(self,switch):
 
-    sleep(0.002) # extra 2 mSec de-bounce time
+    #sleep(0.002) # extra 2 mSec de-bounce time
 
     # read both of the switches
     Switch_A = GPIO.input(self.pinA)
@@ -74,14 +74,14 @@ class RotaryEncoder:
     if (Switch_A == 1) and (Switch_B == 0) : # A then B ->
         event=self.CLOCKWISE
         self.callback(event)
-      
+
           # at this point, B may still need to go high, wait for it
         while Switch_B == 0:
             Switch_B = GPIO.input(self.pinB)
         # now wait for B to drop to end the click cycle
         while Switch_B == 1:
             Switch_B = GPIO.input(self.pinB)
-        
+
     elif (Switch_A == 1) and (Switch_B == 1): # B then A <-
         event=self.ANTICLOCKWISE
         self.callback(event)
