@@ -49,7 +49,7 @@ p.start(0)
 
 
 # Defaults
-setpoint = 20      # in celsius
+setpoint = 25      # in celsius
 sensortimeout = 300
 heartbeatinterval = 10
 temp_tolerance = 0.9
@@ -135,16 +135,19 @@ def heartbeat():
         #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
+          time.sleep(0.3)
         except:
           print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
         finally:
           if getstatus >= 0:
-              #print("updating htr state: got", getstatus)
+              print("updating htr state: got", getstatus)
               lastfetch = datetime.datetime.now()
               htrstatus = htrstate[getstatus]
               drawlist[0] = True
               refetch = False
-              time.sleep(0.3)
+          else:
+              print ("Fetched invalid/empty status!")
+        time.sleep(0.3)
 
       while not refetch:
         now = datetime.datetime.now()
@@ -306,7 +309,7 @@ def thermostat():
 #            print (now, status_string)
 #            htrtoggle(0)
 
-      elif htrstatus == htrstate[0]:		# If temperature falls under the threshold, turn on at low heat to start
+      elif htrstatus == htrstate[0] || htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on at low heat to start
 #        print (int(idletimeout-floor(seconds%idletimeout)-1), "    Idle    ", end='\r')
         if stemp < target_temp - temp_tolerance:
           print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
