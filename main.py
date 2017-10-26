@@ -133,27 +133,32 @@ def fetchhtrstate():
 
 
 def heartbeat():
-    global htrstatus, htrstate, drawlist, refetch, heartbeatinterval
+    global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch, heartbeatinterval
     while run:
       while refetch:
+        now = datetime.datetime.now()
+        previousstatus = htrstatus
         getstatus = -1
         #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
           time.sleep(0.3)
-          print("updating htr state: got", getstatus)
           if getstatus > -1:
             lastfetch = datetime.datetime.now()
-            htrstatus = htrstate[getstatus]
-            drawlist[0] = True
-            refetch = False
+            if htrstatus == htrstate[getstatus]:
+                print(now, "-- no state change detected")
+            else:
+              drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
+              htrstatus = htrstate[getstatus]
+              print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", previousstatus + ", setting to", htrstatus + ".")
+              lhs=[now, htrstatus, stemp]
           else:
-            print ("got status==",getstatus)
-
+            print (now, "-- ERROR: got invalid status",getstatus)
         except:
-          print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
+          print (now, "-- WARNING: failed to contact arduino!")
         finally:
-          time.sleep(0.3)
+            refetch = False
+            time.sleep(0.3)
 
       while not refetch:
         now = datetime.datetime.now()
@@ -219,28 +224,33 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       time.sleep(300)
 
 def htrtoggle(state):
-    global htrstatus, stemp, htrstate, lhs, drawlist, target_temp, refetch
-    now = datetime.datetime.now()
+    global htrstatus, htrstate, refetch
     refetch = True
-    print ("waiting for refetch:", refetch)
+    now = datetime.datetime.now()
+    print (now, "-- checking current status", refetch)
     while run and refetch:
         time.sleep(0.1)
-
-    if htrstatus != htrstate[state]:
+        # add timouts here...
+    now = datetime.datetime.now()
+    if htrstatus == htrstate[state]:
+        print(now, "-- WARNING: toggled",state, "but already set to", htrstatus)
+    else:
         output = (chr(state+48)+'\n').encode("utf-8")
         ser.write(output)
         time.sleep(0.1)
         refetch = True
-        print ("sent state change to arduino:", state)
+        print (now, "-- sent state change to arduino:", state)
         print ("waiting for refetch again...")
         while run and refetch:
           time.sleep(0.1)
-        if htrstatus != htrstate[1] and htrstatus != htrstate[state]:
-          print ("htr update failed: got", htrstatus, "waiting for", htrstate[state])
+        # ...and here...
+        now = datetime.datetime.now()
+        if htrstatus == htrstate[state]:
+            print(now, "-- Toggle succeeded:",htrstatus)
+        elif htrstatus == htrstate[1]:
+            print(now, "-- Toggle resulted in:", htrstatus)
         else:
-          drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
-          print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", lhs[1] + ", setting to", htrstatus + ".")
-          lhs=[now, htrstatus, stemp]
+            print(now, "-- Toggle failed: got", htrstatus, "expected", htrstate[state])
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
