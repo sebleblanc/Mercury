@@ -120,34 +120,40 @@ def getweather():
 
 def fetchhtrstate():
   output = (chr(9+48)+'\n').encode("utf-8")
-  ser.write(output)
-  time.sleep(0.3)
-  response = ser.readline()
-  state = struct.unpack('>BBB', response)[0]
-  time.sleep(0.1)
-  return state-48
+  try:
+    ser.write(output)
+    time.sleep(0.3)
+    response = ser.readline()
+    state = struct.unpack('>BBB', response)[0]
+    return state-48
+  except:
+    return -1
+  finally:
+    time.sleep(0.1)
+
 
 def heartbeat():
     global htrstatus, htrstate, drawlist, refetch, heartbeatinterval
     while run:
       while refetch:
-        getstatus = None
+        getstatus = -1
         #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
           time.sleep(0.3)
+          print("updating htr state: got", getstatus)
+          if getstatus > -1:
+            lastfetch = datetime.datetime.now()
+            htrstatus = htrstate[getstatus]
+            drawlist[0] = True
+            refetch = False
+          else:
+            print ("got status==",getstatus)
+
         except:
           print (datetime.datetime.now(),"WARNING: failed to contact arduino!")
         finally:
-          if getstatus >= 0:
-              print("updating htr state: got", getstatus)
-              lastfetch = datetime.datetime.now()
-              htrstatus = htrstate[getstatus]
-              drawlist[0] = True
-              refetch = False
-          else:
-              print ("Fetched invalid/empty status!")
-        time.sleep(0.3)
+          time.sleep(0.3)
 
       while not refetch:
         now = datetime.datetime.now()
