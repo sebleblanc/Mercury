@@ -3,7 +3,7 @@ int ST2Relay = 4;
 int ST1Relay = 3;
 int FANRelay = 2;
 unsigned long timeout = 3600000;
-unsigned long cooldown = 45000; // fan cooldown after heating
+unsigned long cooldown = 60000; // fan cooldown after heating
 unsigned long previousFanTime = millis();
 unsigned long currentMillis = millis();
 unsigned long LastMessage = millis();
@@ -67,6 +67,7 @@ void setup() {
 void loop(){
     currentMillis=millis();
     if (Serial.available() > 0) {   // something came across serial
+
      integerValue = 0;         // throw away previous integerValue
      while(1) {            // force into a loop until 'n' is received
        incomingByte = Serial.read();
@@ -90,7 +91,6 @@ void loop(){
         currentstate = hvacmode(0);
     }
   else if ((currentstate > 1) && (((unsigned long)(currentMillis - LastMessage)) >= timeout)){
-        currentstate = 0;
         currentstate = hvacmode(0);
       }
   else {
