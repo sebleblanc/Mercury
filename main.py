@@ -16,7 +16,7 @@ resetbutton = 22
 speaker = 12
 
 # Arduino Serial connect
-ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 0.1)
+ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
 
 # Reset button event
 def reset_event(resetbutton):
@@ -51,7 +51,7 @@ p.start(0)
 # Defaults
 setpoint = 20   # in celsius
 sensortimeout = 300
-heartbeatinterval = 10
+heartbeatinterval = 3
 temp_tolerance = 0.9
 refreshrate = 0.01 		# in seconds
 target_temp = setpoint
@@ -120,19 +120,22 @@ def getweather():
 
 def fetchhtrstate():
   output = (chr(9+48)+'\n').encode("utf-8")
+  #print ("writing out", output)
   ser.write(output)
   time.sleep(0.1)
   response = ser.readline()
   if response != '':
       state = (struct.unpack('>BBB', response)[0]-48)
+
   else:
       state = -1
+  #print ("returning state", state)
   return state
-  time.sleep(0.1)
 
 
 def heartbeat():
     global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch, heartbeatinterval
+    lastfetch = datetime.datetime.now()
     while run:
       while refetch:
         now = datetime.datetime.now()
@@ -141,6 +144,7 @@ def heartbeat():
         #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
+          #print ("-- got status", getstatus)
           time.sleep(0.1)
           if getstatus > -1:
             lastfetch = datetime.datetime.now()
