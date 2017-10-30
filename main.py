@@ -146,7 +146,7 @@ def fetchhtrstate():
 def heartbeat():
     global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch, heartbeatinterval
     lastfetch = datetime.datetime.now()
-    while run:
+    while True:
       while refetch:
         now = datetime.datetime.now()
         previousstatus = htrstatus
@@ -206,7 +206,7 @@ def smoothsensordata(samples,refresh):
         time.sleep(5)
 
 def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
-    global setback, target_temp, setpoint
+    global setback, target_temp, setpoint, run
     while run:
       awaytemp = -1.5
       sleepingtemp = -0.5
@@ -238,7 +238,7 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       time.sleep(300)
 
 def htrtoggle(state):
-    global htrstatus, htrstate, refetch
+    global htrstatus, htrstate, refetch, run
     refetch = True
     now = datetime.datetime.now()
     print (now, "-- checking current status", refetch)
@@ -291,6 +291,7 @@ def thermostat():
 
     schedulethread.start()
     weatherthread.start()
+    ui_inputthread.start()
 
     time.sleep(3)
 
@@ -477,17 +478,18 @@ def redraw():
     time.sleep(refreshrate)
 
 def ui_input():
-  global tt_in, setpoint, setback, target_temp, drawlist
-  if setpoint+tt_in >= 0 <= 30:
-    setpoint += tt_in
-  tt_in=0
-  target_temp = setpoint + setback
-  drawlist[2] = True
+  global tt_in, setpoint, setback, target_temp, drawlist, run
+  while True:
+    if tt_in != 0:
+      if setpoint+tt_in >= 0 <= 30:
+          setpoint += tt_in
+          target_temp = setpoint + setback
+          drawlist[2] = True
+      tt_in = 0
+    time.sleep(0.3)
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
-      ui_inputthread = threading.Thread(target=ui_input)
-      ui_inputthread.setDaemon(True)
       global uimode, drawlist
       if uimode == 0:
         global tt_in
@@ -498,7 +500,6 @@ def rotaryevent(event):
         elif event == 2:
             tt_in -= 0.1
             playtone(2)
-        ui_input()
 
       elif uimode == 1:
         global forecast_day
@@ -516,7 +517,7 @@ def rotaryevent(event):
                 forecast_day = 0
               else:
                 playtone(2)
-
+      time.sleep(0.01)
       return
 
 # This is the event callback routine to handle events
@@ -544,6 +545,7 @@ hvacthread = threading.Thread(target=heartbeat)
 schedulethread = threading.Thread(target=checkschedule)
 sensorthread = threading.Thread(target=smoothsensordata, args=(3,3))  # (no. of samples, period time)
 thermostatthread = threading.Thread(target=thermostat)
+ui_inputthread = threading.Thread(target=ui_input)
 displaythread = threading.Thread(target=redraw)
 weatherthread = threading.Thread(target=getweather)
 
@@ -552,6 +554,7 @@ sensorthread.setDaemon(True)
 hvacthread.setDaemon(True)
 thermostatthread.setDaemon(True)
 schedulethread.setDaemon(True)
+ui_inputthread.setDaemon(True)
 
 thermostatthread.start()
 
