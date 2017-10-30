@@ -49,9 +49,9 @@ p.start(0)
 
 
 # Defaults
-setpoint = 20   # in celsius
+setpoint = 25   # in celsius
 sensortimeout = 300
-heartbeatinterval = 3
+heartbeatinterval = 30
 temp_tolerance = 0.9
 refreshrate = 0.01 		# in seconds
 target_temp = setpoint
