@@ -18,6 +18,13 @@ speaker = 12
 # Arduino Serial connect
 ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
 
+# Save config data
+def savesettings():
+    global setpoint
+    config = {'setpoint': setpoint, 'key2': 'value2'}
+    with open('mercury.cfg', 'w') as f:
+        json.dump(config, f)
+
 # Reset button event
 def reset_event(resetbutton):
     global drawlist
@@ -267,7 +274,7 @@ def thermostat():
     stage2timeout=180
     fantimeout=0
     idletimeout=600
-    updatetimeout=600		# stdout updates
+    updatetimeout=600		# stdout updates and save settings
 
     displaythread.start()
     hvacthread.start()
@@ -345,6 +352,8 @@ def thermostat():
 
       if seconds%updatetimeout <= 1:
         print (now, status_string)
+        savesettings()
+
 #      else:
 #        print (int(seconds%idletimeout), "    ", end='\r')
 
@@ -555,11 +564,7 @@ if htrstatus != htrstate[0]:
   print("Cooling down elements before turning off blower...")
   htrtoggle(0)
 
-
-# Save config data
-config = {'setpoint': setpoint, 'key2': 'value2'}
-with open('mercury.cfg', 'w') as f:
-    json.dump(config, f)
+savesettings()
 
 toggledisplay=False
 displaythread.join()
