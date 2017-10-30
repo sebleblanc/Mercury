@@ -49,14 +49,17 @@ p.start(0)
 
 
 # Defaults
-setpoint = 25   # in celsius
+setpoint = 20   # in celsius
 sensortimeout = 300
 heartbeatinterval = 30
 temp_tolerance = 0.9
 refreshrate = 0.01 		# in seconds
 target_temp = setpoint
 
-# todo - Load saved data
+# Load saved data
+with open('mercury.cfg', 'r') as f:
+    config = json.load(f)
+setpoint = config['setpoint']
 
 # Initialiaze variables
 tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
@@ -551,7 +554,12 @@ print ("Aborting...")
 if htrstatus != htrstate[0]:
   print("Cooling down elements before turning off blower...")
   htrtoggle(0)
-#  time.sleep(80)
+
+
+# Save config data
+config = {'setpoint': setpoint, 'key2': 'value2'}
+with open('mercury.cfg', 'w') as f:
+    json.dump(config, f)
 
 toggledisplay=False
 displaythread.join()
