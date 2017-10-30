@@ -49,7 +49,7 @@ p.start(0)
 
 
 # Defaults
-setpoint = 25      # in celsius
+setpoint = 20   # in celsius
 sensortimeout = 300
 heartbeatinterval = 10
 temp_tolerance = 0.9
@@ -120,16 +120,15 @@ def getweather():
 
 def fetchhtrstate():
   output = (chr(9+48)+'\n').encode("utf-8")
-  try:
-    ser.write(output)
-    time.sleep(0.3)
-    response = ser.readline()
-    state = struct.unpack('>BBB', response)[0]
-    return state-48
-  except:
-    return -1
-  finally:
-    time.sleep(0.1)
+  ser.write(output)
+  time.sleep(0.1)
+  response = ser.readline()
+  if response != '':
+      state = (struct.unpack('>BBB', response)[0]-48)
+  else:
+      state = -1
+  return state
+  time.sleep(0.1)
 
 
 def heartbeat():
@@ -142,15 +141,16 @@ def heartbeat():
         #print ("trying to refetch...")
         try:
           getstatus = fetchhtrstate()
-          time.sleep(0.3)
+          time.sleep(0.1)
           if getstatus > -1:
             lastfetch = datetime.datetime.now()
             if htrstatus == htrstate[getstatus]:
-                print(now, "-- no state change detected")
+                #print(now, "-- no state change detected")
+                pass
             else:
               drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
               htrstatus = htrstate[getstatus]
-              print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", previousstatus + ", setting to", htrstatus + ".")
+              print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", previousstatus + ", now is", htrstatus + ".")
               lhs=[now, htrstatus, stemp]
           else:
             print (now, "-- ERROR: got invalid status",getstatus)
@@ -158,7 +158,7 @@ def heartbeat():
           print (now, "-- WARNING: failed to contact arduino!")
         finally:
             refetch = False
-            time.sleep(0.3)
+            time.sleep(2)
 
       while not refetch:
         now = datetime.datetime.now()
