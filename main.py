@@ -59,7 +59,7 @@ p.start(0)
 setpoint = 20   # in celsius
 sensortimeout = 300
 heartbeatinterval = 30
-temp_tolerance = 0.9
+temp_tolerance = 1.8
 refreshrate = 0.01 		# in seconds
 target_temp = setpoint
 
@@ -118,13 +118,13 @@ def getweather():
     global latest_weather
     while True:
       try:
-        print (datetime.datetime.now(),"updating weather data...")
+        #print (datetime.datetime.now(),"updating weather data...")
         latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
         time.sleep(3)
       except:
         print (datetime.datetime.now(),"ERROR: weather update failure")
       finally:
-        print (datetime.datetime.now(),"weather updated from weather.com")
+        #print (datetime.datetime.now(),"weather updated from weather.com")
         drawlist[4] = True
         time.sleep(900)
 
@@ -241,7 +241,7 @@ def htrtoggle(state):
     global htrstatus, htrstate, refetch, run
     refetch = True
     now = datetime.datetime.now()
-    print (now, "-- checking current status", refetch)
+    #print (now, "-- checking current status", refetch)
     while run and refetch:
         time.sleep(0.1)
         # add timouts here...
@@ -253,8 +253,8 @@ def htrtoggle(state):
         ser.write(output)
         time.sleep(0.1)
         refetch = True
-        print (now, "-- sent state change to arduino:", state)
-        print ("waiting for refetch again...")
+        #print (now, "-- sent state change to arduino:", state)
+        #print ("waiting for refetch again...")
         while run and refetch:
           time.sleep(0.1)
         # ...and here...
@@ -268,10 +268,11 @@ def htrtoggle(state):
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
-    stage1min = 0.05		# minimum threshold (in °C/hour) under which we switch to stage 2
+    stage1min = 0.04		# minimum threshold (in °C/hour) under which we switch to stage 2
     stage2max = 0.5		# maximum threshold (in °C/hour) over which we switch to stage 1
-    stage1timeout=180		# time to wait before checking if we should change states
-    stage2timeout=180
+    stage1timeout=10*60		# time (s) to wait before checking if we should change states
+    stage1maxtime=60*60      # time until forced switch to stage 2
+    stage2timeout=10*60
     fantimeout=0
     idletimeout=600
     updatetimeout=600		# stdout updates and save settings
@@ -301,7 +302,7 @@ def thermostat():
       seconds = tdelta.total_seconds()
       lasttime = lhs[0]
       lasttemp = lhs[2]
-      status_string = '{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
+      status_string = htrstatus + ", " + '{0:.2f}'.format(stemp)+"°C , "+'{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
 
 			# Shut off the heater if temperature reached,
          		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
@@ -312,26 +313,30 @@ def thermostat():
 
       elif htrstatus == htrstate[2]:		# Project temperature increase, if we will hit target temperature
 #        print (int(stage1timeout-floor(seconds%stage1timeout)-1), "    Stage 1    ", end='\r')
-        if seconds%stage1timeout <= 1:		#	If heating too slowly -> go to stage 2
+        if seconds%stage1timeout <= 1:
           if stemp + (stemp - lasttemp) > target_temp:
-            print (now, "Predicted target temperature. ")
+            print (now, "Predicted target temperature in", '{0:.1f}'.format(stage1timeout/60), "minutes.")
             print (now, status_string)
-          elif (stemp - lasttemp)*seconds < stage1min*3600:
-            print (now, "Heating too slowly: (min=", stage1min, "°C/hr)")
+          elif seconds >= stage1maxtime:     # 	If we have been on stage 1 for too long -> go to stage 2
+            print (now, "Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", '{0:.1}'.format(seconds/60), "minutes ago.)")
             print (now, status_string)
             htrtoggle(3)
+#          elif (stemp - lasttemp)*seconds < stage1min*3600:     # 	If heating too slowly -> go to stage 2
+#            print (now, "Heating too slowly: (",(stemp - lasttemp)*seconds,"°C/hr ,min=", stage1min, "°C/hr)")
+#            print (now, status_string)
+#            htrtoggle(3)
 
       elif htrstatus == htrstate[3]:
 #        print (int(stage2timeout-floor(seconds%stage2timeout)-1), "    Stage 2    ", end='\r')
-        if seconds%stage2timeout <= 1:		#       If heating too quickly -> stage 1.
+        if seconds%stage2timeout <= 1:
           if stemp + (stemp - lasttemp) > target_temp:
-            print (now, "Predicted target temperature.")
+            print (now, "Predicted target temperature in", (stage2timeout/60), "minutes.")
             print (now, status_string)
             htrtoggle(2)
-          elif (stemp - lasttemp)*seconds >= stage2max*3600:
-            print (now, "Heating too quickly: (min=", stage2max, "°C/hr)")
-            print (now, status_string)
-            htrtoggle(2)
+#          elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
+#            print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
+#            print (now, status_string)
+#            htrtoggle(2)
 
       elif htrstatus == htrstate[1]:
         pass
@@ -563,9 +568,9 @@ while run:
 
 print ("Aborting...")
 
-if htrstatus != htrstate[0]:
-  print("Cooling down elements before turning off blower...")
-  htrtoggle(0)
+#if htrstatus != htrstate[0]:
+#  print("Cooling down elements before turning off blower...")
+#  htrtoggle(0)
 
 savesettings()
 
