@@ -18,11 +18,12 @@ speaker = 12
 # Arduino Serial connect
 ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
 
+configfile='/home/citizen/software/mercury/mercury.cfg'
 # Save config data
 def savesettings():
-    global setpoint
-    config = {'setpoint': setpoint, 'key2': 'value2'}
-    with open('mercury.cfg', 'w') as f:
+    global setpoint, configfile
+    config = {'setpoint': '{0:.2f}'.format(setpoint), 'key2': 'value2'}
+    with open(configfile, 'w') as f:
         json.dump(config, f)
 
 # Reset button event
@@ -64,9 +65,9 @@ refreshrate = 0.01 		# in seconds
 target_temp = setpoint
 
 # Load saved data
-with open('mercury.cfg', 'r') as f:
+with open(configfile, 'r') as f:
     config = json.load(f)
-setpoint = config['setpoint']
+setpoint = float(config['setpoint'])
 
 # Initialiaze variables
 tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
@@ -274,7 +275,7 @@ def thermostat():
     stage1maxtime=60*60      # time until forced switch to stage 2
     stage2timeout=10*60
     fantimeout=0
-    idletimeout=600
+    idletimeout=10*60
     updatetimeout=600		# stdout updates and save settings
 
     displaythread.start()
@@ -318,7 +319,7 @@ def thermostat():
             print (now, "Predicted target temperature in", '{0:.1f}'.format(stage1timeout/60), "minutes.")
             print (now, status_string)
           elif seconds >= stage1maxtime:     # 	If we have been on stage 1 for too long -> go to stage 2
-            print (now, "Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", '{0:.1}'.format(seconds/60), "minutes ago.)")
+            print (now, "Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", floor(seconds/60), "minutes ago.)")
             print (now, status_string)
             htrtoggle(3)
 #          elif (stemp - lasttemp)*seconds < stage1min*3600:     # 	If heating too slowly -> go to stage 2
@@ -330,9 +331,9 @@ def thermostat():
 #        print (int(stage2timeout-floor(seconds%stage2timeout)-1), "    Stage 2    ", end='\r')
         if seconds%stage2timeout <= 1:
           if stemp + (stemp - lasttemp) > target_temp:
-            print (now, "Predicted target temperature in", (stage2timeout/60), "minutes.")
+            print (now, "Predicted target temperature in", floor(stage2timeout/60), "minutes.")
             print (now, status_string)
-            htrtoggle(2)
+            #htrtoggle(2)
 #          elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
 #            print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
 #            print (now, status_string)
@@ -347,12 +348,11 @@ def thermostat():
 
       elif htrstatus == htrstate[0] or htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on at low heat to start
 #        print (int(idletimeout-floor(seconds%idletimeout)-1), "    Idle    ", end='\r')
-        if stemp < target_temp - temp_tolerance:
-          print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
-          print (now, status_string)
-          htrtoggle(2)
-        if seconds%idletimeout <= 1:
-          print (now, status_string)
+        #if seconds%idletimeout <= 1:
+            if stemp < target_temp - temp_tolerance:
+              print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
+              htrtoggle(2)
+              print (now, status_string)
       else:
         print (now, "ERROR: Bad heater status!", htrstatus, "not in", htrstate)
 
@@ -391,6 +391,7 @@ def drawstatus(element):	# Draw mode 0 (status screen)
     elif element == 2:
       tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
       tts = '{0:.1f}'.format(setpoint) + chr(223) + "C"
+
       mylcd.lcd_display_string(tts.center(20), 2)
 #      mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
 								# 3 - Sensor data
