@@ -275,7 +275,7 @@ def thermostat():
     stage1maxtime=60*60      # time until forced switch to stage 2
     stage2timeout=10*60
     fantimeout=0
-    idletimeout=10*60
+    idletime=10*60       # time we shold hope to stay off for
     updatetimeout=600		# stdout updates and save settings
 
     displaythread.start()
@@ -318,7 +318,7 @@ def thermostat():
           if stemp + (stemp - lasttemp) > target_temp:
             print (now, "Predicted target temperature in", '{0:.1f}'.format(stage1timeout/60), "minutes.")
             print (now, status_string)
-          elif seconds >= stage1maxtime:     # 	If we have been on stage 1 for too long -> go to stage 2
+          if seconds >= stage1maxtime:     # 	If we have been on stage 1 for too long -> go to stage 2
             print (now, "Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", floor(seconds/60), "minutes ago.)")
             print (now, status_string)
             htrtoggle(3)
@@ -347,11 +347,12 @@ def thermostat():
 #            htrtoggle(0)
 
       elif htrstatus == htrstate[0] or htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on at low heat to start
-#        print (int(idletimeout-floor(seconds%idletimeout)-1), "    Idle    ", end='\r')
-        #if seconds%idletimeout <= 1:
             if stemp < target_temp - temp_tolerance:
               print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
-              htrtoggle(2)
+              if seconds < idletime:
+                  htrtoggle(2)
+              else
+                  htrtoggle(3)
               print (now, status_string)
       else:
         print (now, "ERROR: Bad heater status!", htrstatus, "not in", htrstate)
@@ -360,8 +361,6 @@ def thermostat():
         print (now, status_string)
         savesettings()
 
-#      else:
-#        print (int(seconds%idletimeout), "    ", end='\r')
 
       wait_time = (seconds%1)
       time.sleep(1.5-wait_time)		# sleep until next half second
