@@ -275,7 +275,7 @@ def thermostat():
     stage1maxtime=60*60      # time until forced switch to stage 2
     stage2timeout=10*60
     fantimeout=0
-    idletime=10*60       # time we shold hope to stay off for
+    idletime=30*60       # time we shold hope to stay off for
     updatetimeout=600		# stdout updates and save settings
 
     displaythread.start()
@@ -349,9 +349,9 @@ def thermostat():
       elif htrstatus == htrstate[0] or htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on
             if stemp < target_temp - temp_tolerance:
               print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
-              if seconds < idletime:
+              if seconds > idletime:
                   htrtoggle(2)
-              else
+              else:
                   htrtoggle(3)
               print (now, status_string)
       else:
