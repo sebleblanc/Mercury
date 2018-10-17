@@ -5,8 +5,8 @@ import random
 
 # Define GPIO inputs
 PIN_A = 11
-PIN_B = 13
-BUTTON = 15
+PIN_B = 7
+BUTTON = 13
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(12, GPIO.OUT)
