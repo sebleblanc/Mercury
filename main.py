@@ -27,25 +27,25 @@ def savesettings():
         json.dump(config, f)
 
 # Reset button event
-def reset_event(resetbutton):
-    global drawlist
-    if GPIO.input(resetbutton):
-      mylcd.__init__()
-      time.sleep(2)
-      playtone(5)
-      time.sleep(1)
-      drawlist[0],drawlist[1],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True,True
-    else:
-      playtone(1)
-    return
+#def reset_event(resetbutton):
+#    global drawlist
+#    if GPIO.input(resetbutton):
+#      mylcd.__init__()
+#      time.sleep(2)
+#      playtone(5)
+#      time.sleep(1)
+#      drawlist[0],drawlist[1],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True,True
+#    else:
+#      playtone(1)
+#    return
 
 GPIO.setmode(GPIO.BOARD)
 GPIO.setup(rotaryA, GPIO.IN)
 GPIO.setup(rotaryB, GPIO.IN)
 GPIO.setup(rotarybutton, GPIO.IN)
-GPIO.setup(resetbutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
+#GPIO.setup(resetbutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
 GPIO.setup(speaker, GPIO.OUT)
-GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event, bouncetime=3000)
+#GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event, bouncetime=3000)
 
 # Start char LCD
 mylcd = i2c_charLCD.lcd()
@@ -548,7 +548,7 @@ rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
 hvacthread = threading.Thread(target=heartbeat)
 schedulethread = threading.Thread(target=checkschedule)
-sensorthread = threading.Thread(target=smoothsensordata, args=(3,3))  # (no. of samples, period time)
+sensorthread = threading.Thread(target=smoothsensordata, args=(3,10))  # (no. of samples, period time)
 thermostatthread = threading.Thread(target=thermostat)
 ui_inputthread = threading.Thread(target=ui_input)
 displaythread = threading.Thread(target=redraw)
