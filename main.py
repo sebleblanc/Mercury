@@ -4,7 +4,7 @@ from bme280 import readBME280All
 from math import floor
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
-import time, pywapi, json, string, threading, csv, datetime, os, signal, sys, serial, struct
+import time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
 
 # Define GPIO inputs
 rotaryA = 7
@@ -21,10 +21,12 @@ ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
 configfile='/home/citizen/software/mercury/mercury.cfg'
 # Save config data
 def savesettings():
-    global setpoint, configfile
-    config = {'setpoint': '{0:.2f}'.format(setpoint), 'key2': 'value2'}
+    global config, configfile, setpoint
+    savesetpoint = '{0:.2f}'.format(setpoint)
+    saveconfig = config
+    saveconfig['setpoint'] = savesetpoint
     with open(configfile, 'w') as f:
-        json.dump(config, f)
+        json.dump(saveconfig, f)
 
 # Reset button event
 #def reset_event(resetbutton):
@@ -68,9 +70,11 @@ target_temp = setpoint
 with open(configfile, 'r') as f:
     config = json.load(f)
 setpoint = float(config['setpoint'])
+weatherapikey = config['weatherapikey']
+locationid = config['locationid']
 
 # Initialiaze variables
-tt_in,setback,uimode,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0,0
+tt_in,setback,forecast_day,latest_weather,spressure,shumidity = 0,0,0,0,0,0
 blinker,run,toggledisplay,refetch = True,True,True,True
 htrstate = ['Off', 'Fan only', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
@@ -116,16 +120,18 @@ def playtone(tone):
 
 # Get weather from weather API
 def getweather():
-    global latest_weather
+    global latest_weather, weatherapikey, locationid
     while True:
       try:
         #print (datetime.datetime.now(),"updating weather data...")
-        latest_weather = pywapi.get_weather_from_weather_com('CAXX2224:1:CA', units = 'metric' )
+        owmurl='http://api.openweathermap.org/data/2.5/weather?appid=' + weatherapikey + '&id=' + locationid + '&units=metric'
+        response=requests.get(owmurl)
+        latest_weather=response.json()
         time.sleep(3)
       except:
         print (datetime.datetime.now(),"ERROR: weather update failure")
       finally:
-        #print (datetime.datetime.now(),"weather updated from weather.com")
+        #print (datetime.datetime.now(),"weather updated from OpenWeatherMap")
         drawlist[4] = True
         time.sleep(900)
 
@@ -406,10 +412,10 @@ def drawstatus(element):	# Draw mode 0 (status screen)
 								# 4 - Weathercom data
     elif element == 4:
       try:
-        outtempraw = int(latest_weather['current_conditions'] ['temperature'])
-        outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
-        cc = latest_weather['current_conditions']['text']
-        outhumidity = latest_weather['current_conditions']['humidity'] + "%"
+        outtempraw = int(latest_weather['main']['temp'])
+        outtemp = '{0:.0f}'.format(outtempraw) + chr(223) +"C"
+        cc = str(latest_weather['weather'][0]['description'])
+        outhumidity = str(latest_weather['main']['humidity']) + "%"
       except:
         outtemp = '-.-' + chr(223) +"C"
         cc = "N/A"
@@ -442,9 +448,9 @@ def drawweather():
       cc = "N/A"
       outhumidity = "---%"
 
-    outtempraw = int(latest_weather['current_conditions'] ['temperature'])
+    outtempraw = int(latest_weather['main']['temp'])
     outtemp = '{0:.1f}'.format(outtempraw) + chr(223) +"C"
-    cc = latest_weather['current_conditions']['text']
+    cc = latest_weather['weather'][0]['description']
     outhumidity = int(latest_weather['current_conditions']['humidity'])
     dayofweek = latest_weather['forecasts'][forecast_day]['day_of_week']
     date = latest_weather['forecasts'][forecast_day]['date']
@@ -459,20 +465,18 @@ def drawweather():
     return
 
 def redraw():
-    global uimode, drawlist, displayed_time, blinker
+    global drawlist, displayed_time, blinker
     while True:
       if not toggledisplay:
           mylcd.lcd_clear()
           mylcd.backlight(0)
           return
-      elif uimode == 0:
+      else:
           for i in range(0, len(drawlist)):
             if drawlist[i]:
               drawstatus(i)
               drawlist[i] = False
               time.sleep(0.01)
-      else:
-          drawweather()
 
       now = datetime.datetime.now()
 
@@ -495,52 +499,22 @@ def ui_input():
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
-      global uimode, drawlist
-      if uimode == 0:
-        global tt_in
-        if event == 1:
-            tt_in += 0.1
-            playtone(1)
-
-        elif event == 2:
-            tt_in -= 0.1
-            playtone(2)
-
-      elif uimode == 1:
-        global forecast_day
-        if event == 1:
-            forecast_day = forecast_day + 1
-            if forecast_day > 4:
-              forecast_day = 4
-            else:
-              playtone(1)
-
-        elif event == 2:
-            if forecast_day >= 1:
-              forecast_day = forecast_day - 1
-              if forecast_day < 0:
-                forecast_day = 0
-              else:
-                playtone(2)
-      time.sleep(0.01)
-      return
+    global tt_in
+    if event == 1:
+        tt_in += 0.1
+        playtone(1)
+    elif event == 2:
+        tt_in -= 0.1
+        playtone(2)
+    time.sleep(0.01)
+    return
 
 # This is the event callback routine to handle events
 def switch_event(event):
-        global uimode, drawlist
         if event == RotaryEncoder.CLOCKWISE:
             rotaryevent(1)
         elif event == RotaryEncoder.ANTICLOCKWISE:
             rotaryevent(2)
-        elif event == RotaryEncoder.BUTTONUP:
-            if uimode == 0:
-              uimode = 1
-            else:
-              uimode = 0
-              drawlist[0],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True
-            playtone(3)
-        elif event == RotaryEncoder.BUTTONDOWN:
-            playtone(4)
         return
 
 # Define the switch
