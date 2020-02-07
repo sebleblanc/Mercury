@@ -4,7 +4,7 @@ from bme280 import readBME280All
 from math import floor
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
-import time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
+import copy, time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
 
 # Define GPIO inputs
 rotaryA = 7
@@ -23,7 +23,7 @@ configfile='/home/citizen/software/mercury/mercury.cfg'
 def savesettings():
     global config, configfile, setpoint
     savesetpoint = '{0:.2f}'.format(setpoint)
-    saveconfig = config
+    saveconfig = copy.copy(config)
     saveconfig['setpoint'] = savesetpoint
     with open(configfile, 'w') as f:
         json.dump(saveconfig, f)
