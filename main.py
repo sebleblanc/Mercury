@@ -7,6 +7,9 @@ import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 import copy, time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
 
+verbosity = 1
+print (datetime.datetime.now(), "-- Starting Mercury thermostat.")
+
 # Define GPIO inputs
 rotaryA = 7
 rotaryB = 11
@@ -18,6 +21,10 @@ speaker = 12
 
 # Arduino Serial connect
 ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
+
+# Name display screen elements
+screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
+
 
 # Get config file
 #   This code will use the config file indicated by $MERCURY_CONFIG,
@@ -135,10 +142,11 @@ def playtone(tone):
 
 # Get weather from weather API
 def getweather():
-    global latest_weather, weatherapikey, locationid
+    global verbosity, latest_weather, weatherapikey, locationid
     while True:
       try:
-        #print (datetime.datetime.now(),"updating weather data...")
+        if verbosity >1:
+            print (datetime.datetime.now(),"-- Updating weather data...")
         owmurl='http://api.openweathermap.org/data/2.5/weather?appid=' + weatherapikey + '&id=' + locationid + '&units=metric'
         response=requests.get(owmurl)
         latest_weather=response.json()
@@ -146,13 +154,17 @@ def getweather():
       except:
         print (datetime.datetime.now(),"ERROR: weather update failure")
       finally:
-        #print (datetime.datetime.now(),"weather updated from OpenWeatherMap")
+        if verbosity >1:
+            print (datetime.datetime.now(),"-- Weather updated from OpenWeatherMap")
         drawlist[4] = True
         time.sleep(900)
 
 def fetchhtrstate():
+  global verbosity, htrstate
+  now=datetime.datetime.now()
   output = (chr(9+48)+'\n').encode("utf-8")
-  #print ("writing out", output)
+  if verbosity >2:
+      print (now,"-- sending status request (", output,") to the heater")
   ser.write(output)
   time.sleep(0.1)
   response = ser.readline()
@@ -161,37 +173,43 @@ def fetchhtrstate():
 
   else:
       state = -1
-  #print ("returning state", state)
+  if verbosity >2:
+      print (now, "-- Heater returned state", state, "(",htrstate[state],")")
   return state
 
 
 def heartbeat():
-    global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch, heartbeatinterval
+    global verbosity, htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch, heartbeatinterval
     lastfetch = datetime.datetime.now()
     while True:
       while refetch:
         now = datetime.datetime.now()
         previousstatus = htrstatus
         getstatus = -1
-        #print ("trying to refetch...")
+        if verbosity >2:
+            print (now, "-- Trying to refetch heater status...")
         try:
           getstatus = fetchhtrstate()
-          #print ("-- got status", getstatus)
           time.sleep(0.1)
           if getstatus > -1:
             lastfetch = datetime.datetime.now()
             if htrstatus == htrstate[getstatus]:
-                #print(now, "-- no state change detected")
+                if verbosity >2:
+                    print(now, "-- no heater state change detected")
                 pass
             else:
               drawlist[0] = True		# -> redraw the status part of screen and remember/reset time, heater state, and temperature
               htrstatus = htrstate[getstatus]
-              print (now, '{0:.2f}'.format(stemp) + "°C", "->", '{0:.2f}'.format(target_temp) + "°C.  Was", previousstatus + ", now is", htrstatus + ".")
+              if verbosity >0:
+                  print (now, "-- Setting heater to", htrstatus + " from " + previousstatus + ".")
+                  if verbosity >1:
+                      print (now, "-- Current temp: " + '{0:.2f}'.format(stemp) + "°C, ", "Target:", '{0:.2f}'.format(target_temp) + "°C.")
               lhs=[now, htrstatus, stemp]
           else:
-            print (now, "-- ERROR: got invalid status",getstatus)
+            print (now, "-- ERROR: got invalid heater status",getstatus)
         except:
-          print (now, "-- WARNING: failed to contact arduino!")
+          if verbosity >0:
+              print (now, "-- WARNING: failed to contact arduino!")
         finally:
             refetch = False
             time.sleep(2)
@@ -205,7 +223,7 @@ def heartbeat():
 
 # Average sensor readings: takes number of samples(samples) over a period of time (refresh)
 def smoothsensordata(samples,refresh):
-    global stemp,spressure,shumidity,sensortimeout,run
+    global verbosity, stemp,spressure,shumidity,sensortimeout,run
     sensortime = datetime.datetime.now()
     while run:
       t,p,h = 0,0,0
@@ -219,7 +237,8 @@ def smoothsensordata(samples,refresh):
         stemp,spressure,shumidity=t/samples,p/samples,h/samples
         sensortime = now
       except:
-        print (datetime.datetime.now(),"WARNING: sensor failure")
+        if verbosity >0:
+            print (datetime.datetime.now(),"WARNING: sensor failure")
         if (now-sensortime).total_seconds() >= sensortimeout:
           print (datetime.datetime.now(),"ERROR: Timed out waiting for sensor data -- exiting!")
           run = False
@@ -260,33 +279,38 @@ def checkschedule():	# 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
       time.sleep(300)
 
 def htrtoggle(state):
-    global htrstatus, htrstate, refetch, run
+    global verbosity, htrstatus, htrstate, refetch, run
     refetch = True
     now = datetime.datetime.now()
-    #print (now, "-- checking current status", refetch)
+    if verbosity >2:
+        print (now, "-- checking current status", refetch)
     while run and refetch:
         time.sleep(0.1)
         # add timouts here...
     now = datetime.datetime.now()
     if htrstatus == htrstate[state]:
-        print(now, "-- WARNING: toggled",state, "but already set to", htrstatus)
+        if verbosity >0:
+            print(now, "-- WARNING: toggled",state, "but already set to", htrstatus)
     else:
         output = (chr(state+48)+'\n').encode("utf-8")
         ser.write(output)
         time.sleep(0.1)
         refetch = True
-        #print (now, "-- sent state change to arduino:", state)
-        #print ("waiting for refetch again...")
+        if verbosity >2:
+            print (now, "-- Sent state change to heater:", state)
+            print (now, "-- Confirming heater status...")
         while run and refetch:
           time.sleep(0.1)
         # ...and here...
         now = datetime.datetime.now()
         if htrstatus == htrstate[state]:
-            print(now, "-- Toggle succeeded:",htrstatus)
+            if verbosity >2:
+                print(now, "-- Toggle succeeded:", htrstatus)
         elif htrstatus == htrstate[1]:
-            print(now, "-- Toggle resulted in:", htrstatus)
+            if verbosity >1:
+                print(now, "-- Toggle resulted in:", htrstatus)
         else:
-            print(now, "-- Toggle failed: got", htrstatus, "expected", htrstate[state])
+            print(now, "ERROR: Toggle failed: got", htrstatus, "expected", htrstate[state])
 
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus, htrstate, lhs
@@ -324,24 +348,37 @@ def thermostat():
       seconds = tdelta.total_seconds()
       lasttime = lhs[0]
       lasttemp = lhs[2]
-      status_string = htrstatus + ", " + '{0:.2f}'.format(stemp)+"°C , "+'{0:.2f}'.format(stemp-lasttemp) +  "°C since " + lasttime.strftime("%H:%M:%S") + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
+      base_status_string = "-- Heater " + htrstatus + ", Current temp: " + '{0:.2f}'.format(stemp)+"°C"
+      if verbosity >1:
+          extra_status_string = ", " + '{0:.2f}'.format(stemp-lasttemp) + "°C change since " + lasttime.strftime("%H:%M:%S")
+          if verbosity >2:
+              status_string = base_status_string + extra_status_string + " (" + '{0:.2f}'.format((stemp-lasttemp)/seconds*3600) + "°C/hr)"
+          else:
+              status_string = base_status_string + extra_status_string
+      else:
+          status_string = base_status_string
 
 			# Shut off the heater if temperature reached,
          		# unless the heater is already off (so we can continue to increase time delta counter to check timeouts)
       if stemp >= target_temp+(temp_tolerance/3) and htrstatus !=  htrstate[0] and htrstatus != htrstate[1]:
-        print (now, "Temperature reached.")
-        print (now, status_string)
+        if verbosity >0:
+            print (now, "-- Setpoint temperature reached.")
+            print (now, status_string)
         htrtoggle(0)
 
       elif htrstatus == htrstate[2]:		# Project temperature increase, if we will hit target temperature
-#        print (int(stage1timeout-floor(seconds%stage1timeout)-1), "    Stage 1    ", end='\r')
+#       print (int(stage1timeout-floor(seconds%stage1timeout)-1), "    Stage 1    ", end='\r')
+        if verbosity >3:
+            print ("-- Staying ", '{0:.1f}'.format(stage1timeout/60),"minutes in stage 1")
         if seconds%stage1timeout <= 1:
           if stemp + (stemp - lasttemp) > target_temp:
-            print (now, "Predicted target temperature in", '{0:.1f}'.format(stage1timeout/60), "minutes.")
-            print (now, status_string)
+            if verbosity >1:
+                print (now, "-- Predicted target temperature in", '{0:.1f}'.format(stage1timeout/60), "minutes.")
+                print (now, status_string)
           if seconds >= stage1maxtime:     # 	If we have been on stage 1 for too long -> go to stage 2
-            print (now, "Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", floor(seconds/60), "minutes ago.)")
-            print (now, status_string)
+            if verbosity >1:
+                print (now, "-- Low Heat is taking too long:",'{0:.2f}'.format(stemp - lasttemp),"°C since", lasttime.strftime("%H:%M:%S"), ", (", floor(seconds/60), "minutes ago.)")
+                print (now, status_string)
             htrtoggle(3)
 #          elif (stemp - lasttemp)*seconds < stage1min*3600:     # 	If heating too slowly -> go to stage 2
 #            print (now, "Heating too slowly: (",(stemp - lasttemp)*seconds,"°C/hr ,min=", stage1min, "°C/hr)")
@@ -350,10 +387,13 @@ def thermostat():
 
       elif htrstatus == htrstate[3]:
 #        print (int(stage2timeout-floor(seconds%stage2timeout)-1), "    Stage 2    ", end='\r')
-        if seconds%stage2timeout <= 1:
-          if stemp + (stemp - lasttemp) > target_temp:
-            print (now, "Predicted target temperature in", floor(stage2timeout/60), "minutes.")
-            print (now, status_string)
+          if verbosity >3:
+                  print ("-- Staying ", '{0:.1f}'.format(stage2timeout/60),"minutes in stage 2")
+          if seconds%stage2timeout <= 1:
+            if stemp + (stemp - lasttemp) > target_temp:
+              if verbosity >1:
+                    print (now, "-- Predicted target temperature in", floor(stage2timeout/60), "minutes.")
+                    print (now, status_string)
             #htrtoggle(2)
 #          elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
 #            print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
@@ -369,17 +409,20 @@ def thermostat():
 
       elif htrstatus == htrstate[0] or htrstatus==htrstate[1]:		# If temperature falls under the threshold, turn on
             if stemp < target_temp - temp_tolerance:
-              print (now, "Temperature more than", str(temp_tolerance) + "°C below setpoint.")
+              if verbosity >1:
+                      print (now, "-- Temperature more than", str(temp_tolerance) + "°C below setpoint.")
               if seconds > idletime:
                   htrtoggle(2)
               else:
                   htrtoggle(3)
-              print (now, status_string)
+              if verbosity >0:
+                      print (now, status_string)
       else:
         print (now, "ERROR: Bad heater status!", htrstatus, "not in", htrstate)
 
       if seconds%updatetimeout <= 1:
-        print (now, status_string)
+        if verbosity >0:
+            print (now, status_string)
         savesettings()
 
 
@@ -387,9 +430,9 @@ def thermostat():
       time.sleep(1.5-wait_time)		# sleep until next half second
 
 def drawstatus(element):	# Draw mode 0 (status screen)
-#    print ("refreshing screen element ", element)
-    global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus, displayed_time, blinker
-
+    global verbosity, screenelements, latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus, displayed_time, blinker
+    if verbosity >3:
+        print (datetime.datetime.now(), "-- refreshing screen element ", element, "(", screenelements[element], ")")
 								# 0 - Heater Status
     if element == 0:
       mylcd.lcd_display_string(htrstatus.ljust(10),1)
@@ -407,13 +450,12 @@ def drawstatus(element):	# Draw mode 0 (status screen)
         else:					# blink colon back on
           mylcd.lcd_display_string(":",1, 17)
           blinker = False
-								# 2 - Temperature setting
+								# 2 - Temperature setpoint
     elif element == 2:
       tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
       tts = '{0:.1f}'.format(setpoint) + chr(223) + "C"
 
       mylcd.lcd_display_string(tts.center(20), 2)
-#      mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
 								# 3 - Sensor data
     elif element == 3:
       if stemp == None:
@@ -424,7 +466,7 @@ def drawstatus(element):	# Draw mode 0 (status screen)
       sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
       mylcd.lcd_display_string(sensortemperature.ljust(10),3)
       mylcd.lcd_display_string(sensorhumidity.ljust(10), 4)
-								# 4 - Weathercom data
+								# 4 - Weather data
     elif element == 4:
       try:
         outtempraw = int(latest_weather['main']['temp'])
@@ -442,7 +484,7 @@ def drawstatus(element):	# Draw mode 0 (status screen)
 
 # Draw mode 1 (weather screen)
 def drawweather():
-    global latest_weather,forecast_day,stemp
+    global verbosity, latest_weather,forecast_day,stemp
 
     localtime = time.asctime(time.localtime(time.time()))
 
@@ -453,7 +495,8 @@ def drawweather():
 
     if latest_weather == 0:
       for i in range(0,11):
-        print ("waiting for external weather info")
+        if verbosity >1:
+            print (datetime.datetime.now(), "-- Waiting for external weather info")
         time.sleep(1)
         if latest_weather != 0:
           break
