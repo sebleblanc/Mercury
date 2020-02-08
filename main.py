@@ -2,6 +2,7 @@ from __future__ import print_function
 from rotary_class import RotaryEncoder
 from bme280 import readBME280All
 from math import floor
+from os import environ, path
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 import copy, time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
@@ -18,7 +19,21 @@ speaker = 12
 # Arduino Serial connect
 ser = serial.Serial('/dev/ttyUSB0',  9600, timeout = 1)
 
-configfile='/home/citizen/software/mercury/mercury.cfg'
+# Get config file
+#   This code will use the config file indicated by $MERCURY_CONFIG,
+#   otherwise it defaults to a sensible path in $XDG_CONFIG_HOME,
+#   and if this is also unset, it defers to ~/.config/mercury.
+def get_config_file():
+    config_file = environ.get('MERCURY_CONFIG')
+
+    if config_file is None:
+        base_path = environ.get('XDG_CONFIG_HOME', path.expanduser('~/.config'))
+        config_file = path.join(base_path, 'mercury')
+
+    return config_file
+
+configfile = get_config_file()
+
 # Save config data
 def savesettings():
     global config, configfile, setpoint
