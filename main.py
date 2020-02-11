@@ -258,7 +258,7 @@ def heartbeat():
                         htrstatus = htrstate[getstatus]
                         info(('{stemp:.2f}°C -> {target_temp:.2f}°C. '
                               'Was {previousstatus!r}, '
-                              ' now is {htrstatus!r}.').format(
+                              'now is {htrstatus!r}.').format(
                             stemp=stemp,
                             target_temp=target_temp,
                             previousstatus=previousstatus,
@@ -432,8 +432,8 @@ def thermostat():
         seconds = tdelta.total_seconds()
         lasttime = lhs[0]
         lasttemp = lhs[2]
-        status_string = ('{htrstatus}, {stemp:.2f}°C, {stempdelta:.2f}°C'
-                         'since {timestamp} ({temprate:.2f}°C/hr)'
+        status_string = ('{htrstatus}, {stemp:.2f}°C, [{stempdelta:.2f}°C '
+                         'since {timestamp} ({temprate:.2f}°C/hr)]'
                          .format(
                              htrstatus=htrstatus,
                              stemp=stemp,
@@ -523,10 +523,10 @@ def drawstatus(element):
     global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus
     global displayed_time, blinker, last_blinker_refresh
 
-    # 0 - Heater Status
     debug("refreshing screen element %s (%s)"
           % (element, screenelements[element]))
 
+    # 0 - Heater Status
     if element == 0:
         mylcd.lcd_display_string(htrstatus.ljust(10), 1)
 
