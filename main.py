@@ -3,9 +3,10 @@ from rotary_class import RotaryEncoder
 from bme280 import readBME280All
 from math import floor
 from os import environ, path
+from threading import Thread
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
-import copy, time, requests, json, string, threading, csv, datetime, os, signal, sys, serial, struct
+import copy, time, requests, json, string, csv, datetime, os, signal, sys, serial, struct
 
 verbosity = 1
 print (datetime.datetime.now(), "-- Starting Mercury thermostat.")
@@ -323,11 +324,11 @@ def thermostat():
     idletime=30*60       # time we shold hope to stay off for
     updatetimeout=600		# stdout updates and save settings
 
-    displaythread.start()
-    hvacthread.start()
+    threads['display'].start()
+    threads['hvac'].start()
 
     stemp = False
-    sensorthread.start()
+    threads['sensor'].start()
     while run and not stemp:
       time.sleep(1)
 
@@ -336,9 +337,9 @@ def thermostat():
 
     lhs = [datetime.datetime.now(), htrstatus,  stemp] 	# endtime, last state, last temp
 
-    schedulethread.start()
-    weatherthread.start()
-    ui_inputthread.start()
+    threads['schedule'].start()
+    threads['weather'].start()
+    threads['ui_input'].start()
 
     time.sleep(3)
 
@@ -578,22 +579,21 @@ def switch_event(event):
 # Define the switch
 rswitch = RotaryEncoder(rotaryA,rotaryB,rotarybutton,switch_event)
 
-hvacthread = threading.Thread(target=heartbeat)
-schedulethread = threading.Thread(target=checkschedule)
-sensorthread = threading.Thread(target=smoothsensordata, args=(3,10))  # (no. of samples, period time)
-thermostatthread = threading.Thread(target=thermostat)
-ui_inputthread = threading.Thread(target=ui_input)
-displaythread = threading.Thread(target=redraw)
-weatherthread = threading.Thread(target=getweather)
+threads = {
+    "hvac": Thread(target=heartbeat),
+    "schedule": Thread(target=checkschedule),
+    "sensor": Thread(target=smoothsensordata, args=(3,10)),  # (no. of samples, period time)
+    "thermostat": Thread(target=thermostat),
+    "ui_input": Thread(target=ui_input),
+    "display": Thread(target=redraw),
+    "weather": Thread(target=getweather),
+}
 
-weatherthread.setDaemon(True)
-sensorthread.setDaemon(True)
-hvacthread.setDaemon(True)
-thermostatthread.setDaemon(True)
-schedulethread.setDaemon(True)
-ui_inputthread.setDaemon(True)
+for t in threads:
+    if t != "display":
+        threads[t].setDaemon(True)
 
-thermostatthread.start()
+threads['thermostat'].start()
 
 while run:
   time.sleep(0.5)
@@ -607,7 +607,7 @@ print ("Aborting...")
 savesettings()
 
 toggledisplay=False
-displaythread.join()
+threads['display'].join()
 GPIO.cleanup()
 ser.close()
 p.stop()
