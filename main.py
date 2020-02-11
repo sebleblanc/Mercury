@@ -253,7 +253,7 @@ def heartbeat():
                     if htrstatus == htrstate[getstatus]:
                         debug("no heater state change detected")
                     else:
-		        # -> redraw the status part of screen and remember/reset time, heater state, and temperature                        
+		        # -> redraw the status part of screen and remember/reset time, heater state, and temperature
                         drawlist[0] = True
                         htrstatus = htrstate[getstatus]
                         info(('{stemp:.2f}°C -> {target_temp:.2f}°C. '
@@ -560,7 +560,7 @@ def drawstatus(element):
         if stemp is None:
             sensortemp = 0
         else:
-            snsortemp = stemp
+            sensortemp = stemp
 
         sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
         sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
@@ -717,7 +717,7 @@ info("Aborting...")
 savesettings()
 
 toggledisplay = False
-displaythread.join()
+threads['display'].join()
 
 GPIO.cleanup()
 ser.close()
