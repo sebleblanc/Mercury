@@ -109,7 +109,7 @@ setpoint = 20   # in celsius
 sensortimeout = 300
 heartbeatinterval = 30
 temp_tolerance = 1.8
-refreshrate = 0.01 		# in seconds
+refreshrate = 0.1 		# in seconds
 target_temp = setpoint
 
 # Load saved data
@@ -126,8 +126,8 @@ forecast_day = 0
 latest_weather = 0
 spressure = 0
 shumidity = 0
-
 blinker = True
+last_blinker_refresh = datetime.datetime.now()
 run = True
 toggledisplay = True
 refetch = True
@@ -521,7 +521,7 @@ def drawstatus(element):
     # Draw mode 0 (status screen)
     # print ("refreshing screen element ", element)
     global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus
-    global displayed_time, blinker
+    global displayed_time, blinker, last_blinker_refresh
 
     # 0 - Heater Status
     debug("refreshing screen element %s (%s)"
@@ -532,11 +532,9 @@ def drawstatus(element):
 
     # 1 - Time
     elif element == 1:
-        displayed_time = datetime.datetime.now()
-        localtime = displayed_time.strftime('%H:%M')
 
-        mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
         if drawlist[1] == 2:
+            last_blinker_refresh = datetime.datetime.now()
             if not blinker:
                 # blink colon off
                 mylcd.lcd_display_string(" ", 1, 17)
@@ -545,6 +543,16 @@ def drawstatus(element):
                 # blink colon back on
                 mylcd.lcd_display_string(":", 1, 17)
                 blinker = False
+
+        else:
+            displayed_time = datetime.datetime.now()
+            if not blinker:
+                localtime = displayed_time.strftime('%H %M')
+            else:
+                localtime = displayed_time.strftime('%H:%M')
+
+            mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
+
 
     # 2 - Temperature setting
     elif element == 2:
@@ -626,7 +634,7 @@ def drawweather():
 
 
 def redraw():
-    global drawlist, displayed_time, blinker
+    global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
     while True:
         if not toggledisplay:
             mylcd.lcd_clear()
@@ -641,14 +649,14 @@ def redraw():
                     time.sleep(0.01)
 
         now = datetime.datetime.now()
-
+        # Decide if we should redraw the time...
         if (now - displayed_time) > datetime.timedelta(seconds=30):
             drawlist[1] = True
-
-        elif (now - displayed_time) >= datetime.timedelta(seconds=1):
+        # ...or just the blinker
+        elif (now - last_blinker_refresh) >= datetime.timedelta(seconds=1):
             drawlist[1] = 2
 
-    time.sleep(refreshrate)
+        time.sleep(refreshrate)
 
 
 def ui_input():
