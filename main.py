@@ -28,98 +28,7 @@ logging.basicConfig(
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
-# Define GPIO inputs
-rotaryA = 7
-rotaryB = 11
-rotarybutton = 13
-resetbutton = 22
-
-# Define GPIO outputs
-speaker = 12
-
-# Arduino Serial connect
-ser = serial.Serial('/dev/ttyUSB0',  9600, timeout=1)
-
-# Name display screen elements
-screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
-
-
-# Get config file
-#   This code will use the config file indicated by $MERCURY_CONFIG,
-#   otherwise it defaults to a sensible path in $XDG_CONFIG_HOME,
-#   and if this is also unset, it defers to ~/.config/mercury.
-def get_config_file():
-    config_file = environ.get('MERCURY_CONFIG')
-
-    if config_file is None:
-        base_path = environ.get('XDG_CONFIG_HOME', path.expanduser('~/.config'))
-        config_file = path.join(base_path, 'mercury')
-
-    return config_file
-
-configfile = get_config_file()
-
-# Save config data
-def savesettings():
-    '''Save configuration data'''
-
-    global config, configfile, setpoint
-
-    savesetpoint = '{0:.2f}'.format(setpoint)
-    saveconfig = copy.copy(config)
-    saveconfig['setpoint'] = savesetpoint
-
-    with open(configfile, 'w') as f:
-        json.dump(saveconfig, f)
-
-# Reset button event
-# def reset_event(resetbutton):
-#     global drawlist
-#     if GPIO.input(resetbutton):
-#       mylcd.__init__()
-#       time.sleep(2)
-#       playtone(5)
-#       time.sleep(1)
-#       drawlist[0],drawlist[1],drawlist[2],drawlist[3],drawlist[4]=True,True,True,True,True
-#     else:
-#       playtone(1)
-#     return
-
-
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(rotaryA, GPIO.IN)
-GPIO.setup(rotaryB, GPIO.IN)
-GPIO.setup(rotarybutton, GPIO.IN)
-# GPIO.setup(resetbutton, GPIO.IN, pull_up_down = GPIO.PUD_UP)
-GPIO.setup(speaker, GPIO.OUT)
-# GPIO.add_event_detect(resetbutton, GPIO.BOTH, callback=reset_event,
-#                       bouncetime=3000)
-
-# Start char LCD
-mylcd = i2c_charLCD.lcd()
-mylcd.backlight(1)
-
-# Start PWM speaker
-p = GPIO.PWM(speaker, 600)
-p.start(0)
-
-
-# Defaults
-setpoint = 20   # in celsius
-sensortimeout = 300
-heartbeatinterval = 30
-temp_tolerance = 1.8
-refreshrate = 0.1 		# in seconds
-target_temp = setpoint
-
-# Load saved data
-with open(configfile, 'r') as f:
-    config = json.load(f)
-setpoint = float(config['setpoint'])
-weatherapikey = config['weatherapikey']
-locationid = config['locationid']
-
-# Initialiaze variables
+# Initialize variables
 tt_in = 0
 setback = 0
 forecast_day = 0
@@ -141,6 +50,96 @@ htrstatus = htrstate[0]
 # 4 Weather data
 drawlist = [True, True, True, True, True]
 
+# Define GPIO inputs
+rotaryA = 7
+rotaryB = 11
+rotarybutton = 13
+resetbutton = 22
+
+# Define GPIO outputs
+speaker = 12
+
+# Name display screen elements
+screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
+
+# Get config file
+#   This code will use the config file indicated by $MERCURY_CONFIG,
+#   otherwise it defaults to a sensible path in $XDG_CONFIG_HOME,
+#   and if this is also unset, it defers to ~/.config/mercury.
+def get_config_file():
+    config_file = environ.get('MERCURY_CONFIG')
+
+    if config_file is None:
+        base_path = environ.get('XDG_CONFIG_HOME', path.expanduser('~/.config'))
+        config_file = path.join(base_path, 'mercury')
+
+    info("Using config file: %s" % config_file)
+    return config_file
+
+configfile = get_config_file()
+
+# Arduino Serial connect
+info("Getting Arduino serial connection...")
+try:
+    ser = serial.Serial('/dev/ttyUSB0',  9600, timeout=1)
+    info("Arduino serial connection started.")
+except:
+    error("Failed to start serial connection.  The program will exit.")
+    run = False
+
+# Initialize GPIO
+info("Setting GPIO modes...")
+try:
+    GPIO.setmode(GPIO.BOARD)
+    GPIO.setup(rotaryA, GPIO.IN)
+    GPIO.setup(rotaryB, GPIO.IN)
+    GPIO.setup(rotarybutton, GPIO.IN)
+    GPIO.setup(speaker, GPIO.OUT)
+    p = GPIO.PWM(speaker, 600)
+    p.start(0)
+    info("Set GPIO: Rotary=%s,%s Button=%s Pcspkr=%s" % (rotaryA, rotaryB, rotarybutton, speaker))
+except:
+    error("GPIO init failed.  The program will exit.")
+    run = False
+
+# (re)start char LCD
+def startlcd(retry):
+    global run
+    try:
+        info("Starting LCD display...")
+        trylcd = i2c_charLCD.lcd()
+        trylcd.backlight(1)
+        info("Started LCD display.")
+        return trylcd
+    except:
+        if not retry:
+            error("LCD display init failed.  The program will exit.")
+            run = False
+        else:
+            warning("LCD display init failed.")
+
+mylcd = startlcd(False)
+
+def displayfail():
+    warning("Communication failed with display, re-initializing...")
+    mylcd = startlcd(True)
+
+
+
+# Defaults
+setpoint = 20   # in celsius
+sensortimeout = 300
+heartbeatinterval = 30
+temp_tolerance = 1.8
+refreshrate = 0.1 		# in seconds
+target_temp = setpoint
+
+# Load saved data
+with open(configfile, 'r') as f:
+    config = json.load(f)
+setpoint = float(config['setpoint'])
+weatherapikey = config['weatherapikey']
+locationid = config['locationid']
 
 # OS signal handler
 def handler_stop_signals(signum, frame):
@@ -151,6 +150,18 @@ def handler_stop_signals(signum, frame):
 signal.signal(signal.SIGINT, handler_stop_signals)
 signal.signal(signal.SIGTERM, handler_stop_signals)
 
+# Save config data
+def savesettings():
+    '''Save configuration data'''
+
+    global config, configfile, setpoint
+
+    savesetpoint = '{0:.2f}'.format(setpoint)
+    saveconfig = copy.copy(config)
+    saveconfig['setpoint'] = savesetpoint
+
+    with open(configfile, 'w') as f:
+        json.dump(saveconfig, f)
 
 def playtone(tone):
     if tone == 1:
@@ -528,7 +539,10 @@ def drawstatus(element):
 
     # 0 - Heater Status
     if element == 0:
-        mylcd.lcd_display_string(htrstatus.ljust(10), 1)
+        try:
+            mylcd.lcd_display_string(htrstatus.ljust(10), 1)
+        except:
+            displayfail()
 
     # 1 - Time
     elif element == 1:
@@ -537,12 +551,20 @@ def drawstatus(element):
             last_blinker_refresh = datetime.datetime.now()
             if not blinker:
                 # blink colon off
-                mylcd.lcd_display_string(" ", 1, 17)
                 blinker = True
+                try:
+                    mylcd.lcd_display_string(" ", 1, 17)
+                except:
+                    displayfail()
+
             else:
                 # blink colon back on
-                mylcd.lcd_display_string(":", 1, 17)
                 blinker = False
+                try:
+                    mylcd.lcd_display_string(":", 1, 17)
+                except:
+                    displayfail()
+
 
         else:
             displayed_time = datetime.datetime.now()
@@ -550,17 +572,20 @@ def drawstatus(element):
                 localtime = displayed_time.strftime('%H %M')
             else:
                 localtime = displayed_time.strftime('%H:%M')
-
-            mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
+            try:
+                mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
+            except:
+                displayfail()
 
 
     # 2 - Temperature setting
     elif element == 2:
         tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
         tts = '{0:.1f}'.format(setpoint) + chr(223) + "C"
-
-        mylcd.lcd_display_string(tts.center(20), 2)
-        # mylcd.lcd_display_string(tts.center(10) + "(" + tt.center(8) + ")", 2)
+        try:
+            mylcd.lcd_display_string(tts.center(20), 2)
+        except:
+            displayfail()
 
 
     # 3 - Sensor data
@@ -572,8 +597,11 @@ def drawstatus(element):
 
         sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
         sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
-        mylcd.lcd_display_string(sensortemperature.ljust(10), 3)
-        mylcd.lcd_display_string(sensorhumidity.ljust(10), 4)
+        try:
+            mylcd.lcd_display_string(sensortemperature.ljust(10), 3)
+            mylcd.lcd_display_string(sensorhumidity.ljust(10), 4)
+        except:
+            displayfail()
 
     # 4 - Weather data
     elif element == 4:
@@ -589,8 +617,11 @@ def drawstatus(element):
             outhumidity = "---%"
 
         finally:
-            mylcd.lcd_display_string(outtemp.rjust(10), 3, 10)
-            mylcd.lcd_display_string(outhumidity.rjust(10), 4, 10)
+            try:
+                mylcd.lcd_display_string(outtemp.rjust(10), 3, 10)
+                mylcd.lcd_display_string(outhumidity.rjust(10), 4, 10)
+            except:
+                displayfail()
 
 
 # Draw mode 1 (weather screen)
@@ -626,19 +657,24 @@ def drawweather():
     low = latest_weather['forecasts'][forecast_day]['low'] + chr(223) + "C"
     sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
 
-    mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6), 1)
-    mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
-    mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
-    mylcd.lcd_display_string(sensortemperature.ljust(10) +
-                             outtemp.rjust(10), 4)
-
+    try:
+        mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6), 1)
+        mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
+        mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
+        mylcd.lcd_display_string(sensortemperature.ljust(10) +
+                                    outtemp.rjust(10), 4)
+    except:
+        displayfail()
 
 def redraw():
     global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
     while True:
         if not toggledisplay:
-            mylcd.lcd_clear()
-            mylcd.backlight(0)
+            try:
+                mylcd.lcd_clear()
+                mylcd.backlight(0)
+            except:
+                displayfail()
             return
 
         else:
