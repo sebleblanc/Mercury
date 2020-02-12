@@ -268,7 +268,7 @@ def heartbeat():
                         drawlist[0] = True
                         htrstatus = htrstate[getstatus]
                         info(('Current: {stemp:.2f}°C,  Target: {target_temp:.2f}°C. '
-                              '{previousstatus!r} → {htrstatus!r}.').format(
+                              '{previousstatus!r} → now is {htrstatus!r}.').format(
                             stemp=stemp,
                             target_temp=target_temp,
                             previousstatus=previousstatus,
@@ -496,8 +496,7 @@ def thermostat():
 
             if seconds % stage2timeout <= 1:
                 if stemp + (stemp - lasttemp) > target_temp:
-                    info('Predicted target temperature in {0:d} minutes'
-                         .format(stage2timeout/60))
+                    info('Predicted target temperature in %.1f minutes' % (stage2timeout/60))
                     # htrtoggle(2)
                 # elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
                 #     print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
