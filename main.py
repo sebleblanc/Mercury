@@ -267,9 +267,8 @@ def heartbeat():
 		        # -> redraw the status part of screen and remember/reset time, heater state, and temperature
                         drawlist[0] = True
                         htrstatus = htrstate[getstatus]
-                        info(('{stemp:.2f}°C -> {target_temp:.2f}°C. '
-                              'Was {previousstatus!r}, '
-                              'now is {htrstatus!r}.').format(
+                        info(('Current: {stemp:.2f}°C,  Target: {target_temp:.2f}°C. '
+                              '{previousstatus!r} → {htrstatus!r}.').format(
                             stemp=stemp,
                             target_temp=target_temp,
                             previousstatus=previousstatus,
@@ -370,7 +369,7 @@ def htrtoggle(state):
         # add timouts here...
 
     if htrstatus == htrstate[state]:
-        warning("-- toggled %s, but already set to %s." % (state, htrstatus))
+        warning("toggled %s, but already set to %s." % (state, htrstatus))
 
     else:
         output = (chr(state+48)+'\n').encode("utf-8")
@@ -386,11 +385,11 @@ def htrtoggle(state):
 
         # ...and here...
         if htrstatus == htrstate[state]:
-            info("-- Toggle succeeded: %s" % htrstatus)
+            info("Heater toggle succeeded: %s" % htrstatus)
         elif htrstatus == htrstate[1]:
-            info("-- Toggle resulted in: %s" % htrstatus)
+            info("Heater toggle resulted in: %s" % htrstatus)
         else:
-            error("-- Toggle failed: got %s, expected %s" %
+            error("Heater toggle failed: got %s, expected %s" %
                   (htrstatus, htrstate[state]))
 
 
@@ -417,16 +416,23 @@ def thermostat():
     # stdout updates and save settings
     updatetimeout = 600
 
+    info("Starting threads...")
+    debug("Starting display thread")
     threads['display'].start()
+    debug("Starting hvac thread")
     threads['hvac'].start()
 
     stemp = False
+    debug("Starting sensor thread")
     threads['sensor'].start()
+
     while run and not stemp:
         time.sleep(1)
+    debug("Got sensor data: %s" % stemp)
 
     while run and not htrstatus:
         time.sleep(1)
+    debug("Got hvac status: %s" % htrstatus)
 
     # endtime, last state, last temp
     lhs = [datetime.datetime.now(), htrstatus, stemp]
@@ -436,6 +442,8 @@ def thermostat():
     threads['ui_input'].start()
 
     time.sleep(3)
+
+    info("Heater: %s, Temp: %s°C" % (htrstatus, stemp))
 
     while run:
         now = datetime.datetime.now()
@@ -459,7 +467,6 @@ def thermostat():
                 and htrstatus != htrstate[0]
                 and htrstatus != htrstate[1]):
             info("Temperature reached.")
-            info(status_string)
             htrtoggle(0)
 
         # Project temperature increase, if we will hit target temperature
@@ -470,7 +477,6 @@ def thermostat():
                 if stemp + (stemp - lasttemp) > target_temp:
                     info('Predicted target temperature in {0:.1f} minutes.'
                          .format(stage1timeout/60))
-                    info(status_string)
 
                 if seconds >= stage1maxtime:
                     # We have been on stage 1 for too long -> go to stage 2
@@ -479,7 +485,6 @@ def thermostat():
                          .format(stemp - lasttemp,
                                  lasttime.strftime("%H:%M:%S"),
                                  floor(seconds/60)))
-                    info(status_string)
                     htrtoggle(3)
                 # elif (stemp - lasttemp)*seconds < stage1min*3600:     # 	If heating too slowly -> go to stage 2
                 #     print (now, "Heating too slowly: (",(stemp - lasttemp)*seconds,"°C/hr ,min=", stage1min, "°C/hr)")
@@ -493,7 +498,6 @@ def thermostat():
                 if stemp + (stemp - lasttemp) > target_temp:
                     info('Predicted target temperature in {0:d} minutes'
                          .format(stage2timeout/60))
-                    info(status_string)
                     # htrtoggle(2)
                 # elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
                 #     print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
@@ -516,7 +520,6 @@ def thermostat():
                     htrtoggle(2)
                 else:
                     htrtoggle(3)
-                info(status_string)
         else:
             error("Bad heater status! %s not in %s" % (htrstatus, htrstate))
 
