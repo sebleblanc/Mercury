@@ -24,7 +24,7 @@ from os import environ, path
 
 # Setup logging so that it includes timestamps
 logging.basicConfig(
-    format='%(asctime)s %(levelname)-8s %(message)s',
+    format='%(levelname)-8s %(message)s',
     level=logging.INFO,
     datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -202,6 +202,8 @@ def getweather():
     '''Retrieve weather from OpenWeatherMap'''
 
     global latest_weather, weatherapikey, locationid
+    info("Started %s thread %s." % (threads['weather'].name, threads['weather'].native_id))
+
     while True:
         try:
             # print (datetime.datetime.now(),"updating weather data...")
@@ -252,6 +254,7 @@ def heartbeat():
     global heartbeatinterval
 
     lastfetch = datetime.datetime.now()
+    info("Started %s thread %s." % (threads['hvac'].name, threads['hvac'].native_id))
 
     while True:
         while refetch:
@@ -305,7 +308,9 @@ def smoothsensordata(samples, refresh):
     of time (refresh)
     '''
     global stemp, spressure, shumidity, sensortimeout, run
+    info("Started %s thread %s." % (threads['sensor'].name, threads['sensor'].native_id))
     sensortime = datetime.datetime.now()
+
     while run:
         t, p, h = 0, 0, 0
         now = datetime.datetime.now()
@@ -332,6 +337,8 @@ def smoothsensordata(samples, refresh):
 def checkschedule():
     # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     global setback, target_temp, setpoint, run
+    info("Started %s thread %s." % (threads['schedule'].name, threads['schedule'].native_id))
+
     while run:
         awaytemp = -1.5
         sleepingtemp = -0.5
@@ -401,6 +408,7 @@ def htrtoggle(state):
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus
     global htrstate, lhs
+    info("Started %s thread %s." % (threads['thermostat'].name, threads['thermostat'].native_id))
 
     # minimum threshold (in °C/hour) under which we switch to stage 2
     stage1min = 0.04
@@ -421,23 +429,22 @@ def thermostat():
     # stdout updates and save settings
     updatetimeout = 600
 
-    info("Starting threads...")
-    debug("Starting display thread")
+    info("Starting threads")
     threads['display'].start()
-    debug("Starting hvac thread")
     threads['hvac'].start()
 
     stemp = False
-    debug("Starting sensor thread")
     threads['sensor'].start()
 
+    info("Waiting for sensor data...")
     while run and not stemp:
         time.sleep(1)
-    debug("Got sensor data: %s" % stemp)
+    info("Got sensor data: %s" % stemp)
 
+    info("Waiting for hvac status...")
     while run and not htrstatus:
         time.sleep(1)
-    debug("Got hvac status: %s" % htrstatus)
+    info("Got hvac status: %s" % htrstatus)
 
     # endtime, last state, last temp
     lhs = [datetime.datetime.now(), htrstatus, stemp]
@@ -675,6 +682,8 @@ def drawweather():
 
 def redraw():
     global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
+    info("Started %s thread %s." % (threads['display'].name, threads['display'].native_id))
+
     while True:
         if not toggledisplay:
             try:
@@ -704,6 +713,7 @@ def redraw():
 
 def ui_input():
     global tt_in, setpoint, setback, target_temp, drawlist, run
+    info("Started %s thread %s." % (threads['ui_input'].name, threads['ui_input'].native_id))
 
     while True:
         if tt_in != 0:
@@ -740,14 +750,14 @@ def switch_event(event):
 rswitch = RotaryEncoder(rotaryA, rotaryB, rotarybutton, switch_event)
 
 threads = {
-    "hvac": Thread(target=heartbeat),
-    "schedule": Thread(target=checkschedule),
-    "sensor": Thread(target=smoothsensordata,
+    "hvac": Thread(name='hvac', target=heartbeat),
+    "schedule": Thread(name='schedule', target=checkschedule),
+    "sensor": Thread(name='sensor', target=smoothsensordata,
                      args=(3, 10)),  # (no. of samples, period time)
-    "thermostat": Thread(target=thermostat),
-    "ui_input": Thread(target=ui_input),
-    "display": Thread(target=redraw),
-    "weather": Thread(target=getweather),
+    "thermostat": Thread(name='thermostat', target=thermostat),
+    "ui_input": Thread(name='ui_input', target=ui_input),
+    "display": Thread(name='display', target=redraw),
+    "weather": Thread(name='weather', target=getweather),
 }
 
 for t in threads:
