@@ -427,7 +427,7 @@ def thermostat():
     # time we shold hope to stay off for
     idletime = 30*60
     # stdout updates and save settings
-    updatetimeout = 600
+    updatetimeout = 60*60
 
     info("Starting threads")
     threads['display'].start()
