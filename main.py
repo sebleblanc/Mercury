@@ -79,16 +79,16 @@ def get_config_file():
 configfile = get_config_file()
 
 # Arduino Serial connect
-info("Getting Arduino serial connection...")
+debug("Getting heater serial connection...")
 try:
     ser = serial.Serial('/dev/ttyUSB0',  9600, timeout=1)
-    info("Arduino serial connection started.")
+    info("Heater connected via serial connection.")
 except:
     error("Failed to start serial connection.  The program will exit.")
     run = False
 
 # Initialize GPIO
-info("Setting GPIO modes...")
+debug("Setting GPIO modes...")
 try:
     GPIO.setmode(GPIO.BOARD)
     GPIO.setup(rotaryA, GPIO.IN)
@@ -106,7 +106,7 @@ except:
 def startlcd(retry):
     global run, drawlist
     try:
-        info("Starting LCD display...")
+        debug("Starting LCD display...")
         trylcd = i2c_charLCD.lcd()
         trylcd.backlight(1)
         trylcd.lcd_clear()
@@ -168,6 +168,8 @@ def savesettings():
     with open(configfile, 'w') as f:
         json.dump(saveconfig, f)
 
+    info("Settings saved to %s. Setpoint: %s°C"(configfile, savesetpoint))
+
 def playtone(tone):
     if tone == 1:
         p.ChangeDutyCycle(100)
@@ -206,7 +208,7 @@ def getweather():
 
     while True:
         try:
-            # print (datetime.datetime.now(),"updating weather data...")
+            debug("updating weather data...")
             base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
                             '?appid={key}'
                             '&id={loc}'
@@ -221,10 +223,9 @@ def getweather():
             time.sleep(3)
 
         except:
-            error("Weather update failure")
+            warning("Weather update failure.")
 
         finally:
-            # print (datetime.datetime.now(),"weather updated from OpenWeatherMap")
             drawlist[4] = True
             time.sleep(900)
 
@@ -320,8 +321,8 @@ def smoothsensordata(samples, refresh):
                 temp, pressure, humidity = readBME280All()
                 t, p, h = t+temp, p+pressure, h+humidity
                 time.sleep(refresh/samples)
-
             stemp, spressure, shumidity = t/samples, p/samples, h/samples
+            debug("Got sensor data: %s°C, %skPa, %s%%" % (stemp, spressure, shumidity))
             sensortime = now
 
         except:
@@ -374,14 +375,13 @@ def htrtoggle(state):
     global htrstatus, htrstate, refetch, run
     refetch = True
 
-    info("checking current status (%s)" % refetch)
+    debug("checking current heater status (%s)" % refetch)
 
     while run and refetch:
         time.sleep(0.1)
-        # add timouts here...
 
     if htrstatus == htrstate[state]:
-        warning("toggled %s, but already set to %s." % (state, htrstatus))
+        warning("toggled heater %s, but already set to %s." % (state, htrstatus))
 
     else:
         output = (chr(state+48)+'\n').encode("utf-8")
@@ -389,13 +389,12 @@ def htrtoggle(state):
         time.sleep(0.1)
         refetch = True
 
-        info("sent state change to arduino: %s" % state)
-        info("confirming heater status...")
+        debug("sent state change to heater: %s" % state)
+        debug("confirming heater status...")
 
         while run and refetch:
             time.sleep(0.1)
 
-        # ...and here...
         if htrstatus == htrstate[state]:
             info("Heater toggle succeeded: %s" % htrstatus)
         elif htrstatus == htrstate[1]:
@@ -436,15 +435,14 @@ def thermostat():
     stemp = False
     threads['sensor'].start()
 
-    info("Waiting for sensor data...")
+    debug("Waiting for sensor data...")
     while run and not stemp:
         time.sleep(1)
-    info("Got sensor data: %s" % stemp)
 
     info("Waiting for hvac status...")
     while run and not htrstatus:
         time.sleep(1)
-    info("Got hvac status: %s" % htrstatus)
+    debug("Got hvac status: %s" % htrstatus)
 
     # endtime, last state, last temp
     lhs = [datetime.datetime.now(), htrstatus, stemp]
@@ -626,7 +624,7 @@ def drawstatus(element):
             outhumidity = str(latest_weather['main']['humidity']) + "%"
 
         except:
-            outtemp = '-.-' + chr(223) + "C"
+            outtemp = '--' + chr(223) + "C"
             cc = "N/A"
             outhumidity = "---%"
 
