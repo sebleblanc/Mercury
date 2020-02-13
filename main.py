@@ -109,6 +109,7 @@ def startlcd(retry):
         info("Starting LCD display...")
         trylcd = i2c_charLCD.lcd()
         trylcd.backlight(1)
+        trylcd.lcd_clear()
         info("Started LCD display.")
         return trylcd
     except:
@@ -122,7 +123,9 @@ mylcd = startlcd(False)
 
 def displayfail():
     warning("Communication failed with display, re-initializing...")
+    time.sleep(1)
     mylcd = startlcd(True)
+    time.sleep(1)
 
 
 
