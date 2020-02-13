@@ -635,49 +635,6 @@ def drawstatus(element):
             except:
                 displayfail()
 
-
-# Draw mode 1 (weather screen)
-def drawweather():
-    global latest_weather, forecast_day, stemp
-
-    localtime = time.asctime()
-
-    if stemp is None:
-        sensortemp = 0
-    else:
-        sensortemp = stemp
-
-    if latest_weather == 0:
-        for i in range(0, 11):
-            info("waiting for external weather info")
-            time.sleep(1)
-            if latest_weather != 0:
-                break
-
-    if latest_weather == 0:
-        outtemp = '---' + chr(223) + "C"
-        cc = "N/A"
-        outhumidity = "---%"
-
-    outtempraw = int(latest_weather['main']['temp'])
-    outtemp = '{0:.1f}'.format(outtempraw) + chr(223) + "C"
-    cc = latest_weather['weather'][0]['description']
-    outhumidity = int(latest_weather['current_conditions']['humidity'])
-    dayofweek = latest_weather['forecasts'][forecast_day]['day_of_week']
-    date = latest_weather['forecasts'][forecast_day]['date']
-    high = latest_weather['forecasts'][forecast_day]['high'] + chr(223) + "C"
-    low = latest_weather['forecasts'][forecast_day]['low'] + chr(223) + "C"
-    sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
-
-    try:
-        mylcd.lcd_display_string(dayofweek[0:3] + " " + date.ljust(6), 1)
-        mylcd.lcd_display_string("High".center(9) + "|" + "Low".center(10), 2)
-        mylcd.lcd_display_string(high.center(9) + "|" + low.center(10), 3)
-        mylcd.lcd_display_string(sensortemperature.ljust(10) +
-                                    outtemp.rjust(10), 4)
-    except:
-        displayfail()
-
 def redraw():
     global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
     info("Started %s thread %s." % (threads['display'].name, threads['display'].native_id))
