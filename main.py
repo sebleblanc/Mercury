@@ -104,13 +104,14 @@ except:
 
 # (re)start char LCD
 def startlcd(retry):
-    global run
+    global run, drawlist
     try:
         info("Starting LCD display...")
         trylcd = i2c_charLCD.lcd()
         trylcd.backlight(1)
         trylcd.lcd_clear()
         info("Started LCD display.")
+        drawlist = [True, True, True, True, True]
         return trylcd
     except:
         if not retry:
@@ -118,6 +119,7 @@ def startlcd(retry):
             run = False
         else:
             warning("LCD display init failed.")
+            return False
 
 mylcd = startlcd(False)
 
