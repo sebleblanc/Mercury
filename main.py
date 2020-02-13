@@ -32,7 +32,7 @@ logging.basicConfig(
 tt_in = 0
 setback = 0
 forecast_day = 0
-latest_weather = 0
+latest_weather = None
 spressure = 0
 shumidity = 0
 blinker = True
@@ -168,7 +168,7 @@ def savesettings():
     with open(configfile, 'w') as f:
         json.dump(saveconfig, f)
 
-    info("Settings saved to %s. Setpoint: %s°C"(configfile, savesetpoint))
+    info("Settings saved to %s. Setpoint: %s°C" % (configfile, str(setpoint)))
 
 def playtone(tone):
     if tone == 1:
@@ -207,27 +207,53 @@ def getweather():
     info("Started %s thread %s." % (threads['weather'].name, threads['weather'].native_id))
 
     while True:
+        base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
+                        '?appid={key}'
+                        '&id={loc}'
+                        '&units={units}')
+
+        owm_url = base_owm_url.format(key=weatherapikey,
+                                      loc=locationid,
+                                      units='metric')
+        debug("checking weather data using %s" % owm_url)
+
         try:
-            debug("updating weather data...")
-            base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
-                            '?appid={key}'
-                            '&id={loc}'
-                            '&units={units}')
-
-            owm_url = base_owm_url.format(key=weatherapikey,
-                                          loc=locationid,
-                                          units='metric')
-
             response = requests.get(owm_url)
-            latest_weather = response.json()
-            time.sleep(3)
+            owm_weather = response.json()
+
+            # Make a simpler dict
+            long = owm_weather['weather'][0]['main']
+            short = owm_weather['weather'][0]['description']
+            if long.lower() == short.lower():
+                long = "{short}"
+            else:
+                long = "{short}: {long}"
+
+            shortened_weather = {
+                'temp': int(owm_weather['main']['temp']),
+                'feels': int(owm_weather['main']['feels_like']),
+                'short': str(owm_weather['weather'][0]['main']),
+                'long': str(long),
+                'humidity': str(owm_weather['main']['humidity']),
+                'pressure': str(owm_weather['main']['pressure']),
+                }
+
+            if latest_weather == shortened_weather:
+                debug("No weather changes detected.")
+            else:
+                latest_weather = shortened_weather
+                info("Updated weather.  Temp: {temp}°C (feels like {feels}°C), {long}, "
+                     "Humidity: {humidity}%, Pressure: {pressure}kPa".format(**latest_weather))
+            next_check_seconds = 900
 
         except:
             warning("Weather update failure.")
+            latest_weather = None
+            next_check_seconds = 60
 
         finally:
             drawlist[4] = True
-            time.sleep(900)
+            time.sleep(next_check_seconds)
 
 
 def fetchhtrstate():
@@ -407,6 +433,7 @@ def htrtoggle(state):
 def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus
     global htrstate, lhs
+    info("Starting threads")
     info("Started %s thread %s." % (threads['thermostat'].name, threads['thermostat'].native_id))
 
     # minimum threshold (in °C/hour) under which we switch to stage 2
@@ -428,7 +455,6 @@ def thermostat():
     # stdout updates and save settings
     updatetimeout = 60*60
 
-    info("Starting threads")
     threads['display'].start()
     threads['hvac'].start()
 
@@ -439,7 +465,7 @@ def thermostat():
     while run and not stemp:
         time.sleep(1)
 
-    info("Waiting for hvac status...")
+    debug("Waiting for hvac status...")
     while run and not htrstatus:
         time.sleep(1)
     debug("Got hvac status: %s" % htrstatus)
@@ -607,21 +633,20 @@ def drawstatus(element):
         else:
             sensortemp = stemp
 
-        sensortemperature = '{0:.2f}'.format(sensortemp) + chr(223) + "C"
+        sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
         sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
         try:
-            mylcd.lcd_display_string(sensortemperature.ljust(10), 3)
-            mylcd.lcd_display_string(sensorhumidity.ljust(10), 4)
+            mylcd.lcd_display_string(sensortemperature.ljust(6), 3)
+            mylcd.lcd_display_string(sensorhumidity.ljust(6), 4)
         except:
             displayfail()
 
     # 4 - Weather data
     elif element == 4:
         try:
-            outtempraw = int(latest_weather['main']['temp'])
-            outtemp = '{0:.0f}'.format(outtempraw) + chr(223) + "C"
-            cc = str(latest_weather['weather'][0]['description'])
-            outhumidity = str(latest_weather['main']['humidity']) + "%"
+            outtemp = '{0:.0f}'.format(latest_weather['temp']) + chr(223) + "C"
+            cc = str(latest_weather['short'])
+            outhumidity = str(latest_weather['humidity']) + "%"
 
         except:
             outtemp = '--' + chr(223) + "C"
@@ -630,8 +655,9 @@ def drawstatus(element):
 
         finally:
             try:
-                mylcd.lcd_display_string(outtemp.rjust(10), 3, 10)
-                mylcd.lcd_display_string(outhumidity.rjust(10), 4, 10)
+                mylcd.lcd_display_string(outtemp.rjust(5), 3, 15)
+                mylcd.lcd_display_string(cc.center(8), 4, 7)
+                mylcd.lcd_display_string(outhumidity.rjust(5), 4, 15)
             except:
                 displayfail()
 
