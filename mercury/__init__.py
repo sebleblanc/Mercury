@@ -4,29 +4,31 @@ from bme280 import readBME280All
 import I2C_LCD_driver as i2c_charLCD
 import RPi.GPIO as GPIO
 
-from logging import error, warning, info, debug
+from logging import critical, error, warning, info, debug
 from math import floor
-from os import environ, path
 from threading import Thread
 
-import copy
+import click
+import datetime
+import logging
+import serial
+import signal
+import struct
 import time
 import requests
-import json
-import datetime
-import signal
-import serial
-import struct
-import logging
 
-from math import floor
-from os import environ, path
+from mercury.utils import (
+    setup_logging,
+    log_thread_start,
+    get_config_file,
+    load_settings,
+    save_settings,
+    setup_playtone,
+    playtone,
+)
 
-# Setup logging so that it includes timestamps
-logging.basicConfig(
-    format='%(levelname)-8s %(message)s',
-    level=logging.INFO,
-    datefmt='%Y-%m-%d %H:%M:%S')
+
+setup_logging(level=logging.INFO)
 
 # Initialize variables
 tt_in = 0
@@ -62,19 +64,6 @@ speaker = 12
 # Name display screen elements
 screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
 
-# Get config file
-#   This code will use the config file indicated by $MERCURY_CONFIG,
-#   otherwise it defaults to a sensible path in $XDG_CONFIG_HOME,
-#   and if this is also unset, it defers to ~/.config/mercury.
-def get_config_file():
-    config_file = environ.get('MERCURY_CONFIG')
-
-    if config_file is None:
-        base_path = environ.get('XDG_CONFIG_HOME', path.expanduser('~/.config'))
-        config_file = path.join(base_path, 'mercury')
-
-    info("Using config file: %s" % config_file)
-    return config_file
 
 configfile = get_config_file()
 
@@ -94,13 +83,13 @@ try:
     GPIO.setup(rotaryA, GPIO.IN)
     GPIO.setup(rotaryB, GPIO.IN)
     GPIO.setup(rotarybutton, GPIO.IN)
-    GPIO.setup(speaker, GPIO.OUT)
-    p = GPIO.PWM(speaker, 600)
-    p.start(0)
-    info("Set GPIO: Rotary=%s,%s Button=%s Pcspkr=%s" % (rotaryA, rotaryB, rotarybutton, speaker))
+    setup_playtone(speaker, 600)
+    info("Set GPIO: Rotary=%s,%s Button=%s Pcspkr=%s"
+         % (rotaryA, rotaryB, rotarybutton, speaker))
 except:
-    error("GPIO init failed.  The program will exit.")
+    critical("GPIO init failed.  The program will exit.")
     run = False
+
 
 # (re)start char LCD
 def startlcd(retry):
@@ -121,14 +110,17 @@ def startlcd(retry):
             warning("LCD display init failed.")
             return False
 
+
 mylcd = startlcd(False)
 
+
 def displayfail():
+    global mylcd
+
     warning("Communication failed with display, re-initializing...")
     time.sleep(1)
     mylcd = startlcd(True)
     time.sleep(1)
-
 
 
 # Defaults
@@ -140,11 +132,17 @@ refreshrate = 0.1 		# in seconds
 target_temp = setpoint
 
 # Load saved data
-with open(configfile, 'r') as f:
-    config = json.load(f)
+try:
+    config = load_settings(configfile)
+except FileNotFoundError:
+    critical('Config file (%s) does not exist!' % configfile)
+    raise
+
+
 setpoint = float(config['setpoint'])
 weatherapikey = config['weatherapikey']
 locationid = config['locationid']
+
 
 # OS signal handler
 def handler_stop_signals(signum, frame):
@@ -154,55 +152,6 @@ def handler_stop_signals(signum, frame):
 
 signal.signal(signal.SIGINT, handler_stop_signals)
 signal.signal(signal.SIGTERM, handler_stop_signals)
-
-# Save config data
-def savesettings():
-    '''Save configuration data'''
-
-    global config, configfile, setpoint
-
-    savesetpoint = '{0:.2f}'.format(setpoint)
-    saveconfig = copy.copy(config)
-    saveconfig['setpoint'] = savesetpoint
-
-    with open(configfile, 'w') as f:
-        json.dump(saveconfig, f)
-
-    info("Settings saved to %s. Setpoint: %s°C" % (configfile, str(setpoint)))
-
-def playtone(tone):
-    if tone == 1:
-        p.ChangeDutyCycle(100)
-        time.sleep(0.01)
-        p.ChangeDutyCycle(0)
-
-    elif tone == 2:
-        p.ChangeDutyCycle(100)
-        time.sleep(0.01)
-        p.ChangeDutyCycle(0)
-
-    elif tone == 3:
-        p.ChangeDutyCycle(50)
-        p.ChangeFrequency(880)
-        time.sleep(0.05)
-        p.ChangeDutyCycle(0)
-        p.ChangeFrequency(50)
-
-    elif tone == 4:
-        p.ChangeFrequency(220)
-        p.ChangeDutyCycle(50)
-        time.sleep(0.05)
-        p.ChangeDutyCycle(0)
-
-    elif tone == 5:
-        for i in range(0, 3):
-            playtone(3)
-            time.sleep(0.1)
-
-
-def log_thread_start(func, thread):
-    func("Started thread %s [%s]."
-         % (thread.name, thread.native_id))
 
 
 def getweather():
@@ -304,7 +253,9 @@ def heartbeat():
                     if htrstatus == htrstate[getstatus]:
                         debug("no heater state change detected")
                     else:
-		        # -> redraw the status part of screen and remember/reset time, heater state, and temperature
+		        # -> redraw the status part of screen and
+		        #    remember/reset time, heater state, and
+		        #    temperature
                         drawlist[0] = True
                         htrstatus = htrstate[getstatus]
                         info(('Current: {stemp:.2f}°C,  Target: {target_temp:.2f}°C. '
@@ -355,7 +306,8 @@ def smoothsensordata(samples, refresh):
                 t, p, h = t+temp, p+pressure, h+humidity
                 time.sleep(refresh/samples)
             stemp, spressure, shumidity = t/samples, p/samples, h/samples
-            debug("Got sensor data: %s°C, %skPa, %s%%" % (stemp, spressure, shumidity))
+            debug("Got sensor data: %s°C, %skPa, %s%%"
+                  % (stemp, spressure, shumidity))
             sensortime = now
 
         except:
@@ -530,7 +482,8 @@ def thermostat():
                                  lasttime.strftime("%H:%M:%S"),
                                  floor(seconds/60)))
                     htrtoggle(3)
-                # elif (stemp - lasttemp)*seconds < stage1min*3600:     # 	If heating too slowly -> go to stage 2
+                # elif (stemp - lasttemp)*seconds < stage1min*3600:
+                # 	If heating too slowly -> go to stage 2
                 #     print (now, "Heating too slowly: (",(stemp - lasttemp)*seconds,"°C/hr ,min=", stage1min, "°C/hr)")
                 #     print (now, status_string)
                 #     htrtoggle(3)
@@ -568,7 +521,7 @@ def thermostat():
 
         if seconds % updatetimeout <= 1:
             info(status_string)
-            savesettings()
+            save_settings(config, configfile, setpoint)
 
         wait_time = (seconds % 1)
         time.sleep(1.5-wait_time)		# sleep until next half second
@@ -740,34 +693,43 @@ def switch_event(event):
 # Define the switch
 rswitch = RotaryEncoder(rotaryA, rotaryB, rotarybutton, switch_event)
 
-threads = {
-    "hvac": Thread(name='hvac', target=heartbeat),
-    "schedule": Thread(name='schedule', target=checkschedule),
-    "sensor": Thread(name='sensor', target=smoothsensordata,
-                     args=(3, 10)),  # (no. of samples, period time)
-    "thermostat": Thread(name='thermostat', target=thermostat),
-    "ui_input": Thread(name='ui_input', target=ui_input),
-    "display": Thread(name='display', target=redraw),
-    "weather": Thread(name='weather', target=getweather),
-}
 
-for t in threads:
-    if t != "display":
-        threads[t].setDaemon(True)
+@click.command()
+@click.option('-v', '--verbose', count=True)
+def main(verbose):
+    global threads, toggledisplay
 
-threads['thermostat'].start()
+    threads = {
+        "hvac": Thread(name='hvac', target=heartbeat),
+        "schedule": Thread(name='schedule', target=checkschedule),
+        "sensor": Thread(name='sensor', target=smoothsensordata,
+                         args=(3, 10)),  # (no. of samples, period time)
+        "thermostat": Thread(name='thermostat', target=thermostat),
+        "ui_input": Thread(name='ui_input', target=ui_input),
+        "display": Thread(name='display', target=redraw),
+        "weather": Thread(name='weather', target=getweather),
+    }
 
-while run:
-    time.sleep(0.5)
+    for t in threads:
+        if t != "display":
+            threads[t].setDaemon(True)
 
-info("Aborting...")
+    threads['thermostat'].start()
 
-savesettings()
+    while run:
+        time.sleep(0.5)
 
-toggledisplay = False
-threads['display'].join()
+    info("Aborting...")
 
-GPIO.cleanup()
-ser.close()
-p.stop()
-info("EXIT: program exited.")
+    save_settings(config, configfile, setpoint)
+
+    toggledisplay = False
+    threads['display'].join()
+
+    GPIO.cleanup()
+    ser.close()
+    info("EXIT: program exited.")
+
+
+if __name__ == '__main__':
+    main()
