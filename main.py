@@ -211,13 +211,11 @@ def getweather():
                         '?appid={key}'
                         '&id={loc}'
                         '&units={units}')
-
-        owm_url = base_owm_url.format(key=weatherapikey,
-                                      loc=locationid,
-                                      units='metric')
-        debug("checking weather data using %s" % owm_url)
-
         try:
+            owm_url = base_owm_url.format(key=weatherapikey,
+                                          loc=locationid,
+                                          units='metric')
+            debug("checking weather data using %s" % owm_url)
             response = requests.get(owm_url)
             owm_weather = response.json()
 
