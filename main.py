@@ -200,11 +200,17 @@ def playtone(tone):
             time.sleep(0.1)
 
 
+def log_thread_start(func, thread):
+    func("Started thread %s [%s]."
+         % (thread.name, thread.native_id))
+
+
 def getweather():
     '''Retrieve weather from OpenWeatherMap'''
 
     global latest_weather, weatherapikey, locationid
-    info("Started %s thread %s." % (threads['weather'].name, threads['weather'].native_id))
+
+    log_thread_start(info, threads['weather'])
 
     while True:
         base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
@@ -279,7 +285,8 @@ def heartbeat():
     global heartbeatinterval
 
     lastfetch = datetime.datetime.now()
-    info("Started %s thread %s." % (threads['hvac'].name, threads['hvac'].native_id))
+
+    log_thread_start(info, threads['hvac'])
 
     while True:
         while refetch:
@@ -333,7 +340,9 @@ def smoothsensordata(samples, refresh):
     of time (refresh)
     '''
     global stemp, spressure, shumidity, sensortimeout, run
-    info("Started %s thread %s." % (threads['sensor'].name, threads['sensor'].native_id))
+
+    log_thread_start(info, threads['sensor'])
+
     sensortime = datetime.datetime.now()
 
     while run:
@@ -362,7 +371,8 @@ def smoothsensordata(samples, refresh):
 def checkschedule():
     # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     global setback, target_temp, setpoint, run
-    info("Started %s thread %s." % (threads['schedule'].name, threads['schedule'].native_id))
+
+    log_thread_start(info, threads['schedule'])
 
     while run:
         awaytemp = -1.5
@@ -432,7 +442,7 @@ def thermostat():
     global run, target_temp, setback, stemp, temp_tolerance, htrstatus
     global htrstate, lhs
     info("Starting threads")
-    info("Started %s thread %s." % (threads['thermostat'].name, threads['thermostat'].native_id))
+    log_thread_start(info, threads['thermostat'])
 
     # minimum threshold (in °C/hour) under which we switch to stage 2
     stage1min = 0.04
@@ -661,7 +671,8 @@ def drawstatus(element):
 
 def redraw():
     global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
-    info("Started %s thread %s." % (threads['display'].name, threads['display'].native_id))
+
+    log_thread_start(info, threads['display'])
 
     while True:
         if not toggledisplay:
@@ -692,7 +703,8 @@ def redraw():
 
 def ui_input():
     global tt_in, setpoint, setback, target_temp, drawlist, run
-    info("Started %s thread %s." % (threads['ui_input'].name, threads['ui_input'].native_id))
+
+    log_thread_start(info, threads['ui_input'])
 
     while True:
         if tt_in != 0:
@@ -749,10 +761,6 @@ while run:
     time.sleep(0.5)
 
 info("Aborting...")
-
-# if htrstatus != htrstate[0]:
-#     print("Cooling down elements before turning off blower...")
-#     htrtoggle(0)
 
 savesettings()
 
