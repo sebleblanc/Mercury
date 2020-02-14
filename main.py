@@ -220,12 +220,12 @@ def getweather():
             owm_weather = response.json()
 
             # Make a simpler dict
-            long = owm_weather['weather'][0]['main']
-            short = owm_weather['weather'][0]['description']
+            short = owm_weather['weather'][0]['main']
+            long = owm_weather['weather'][0]['description']
             if long.lower() == short.lower():
-                long = "{short}"
+                long = short
             else:
-                long = "{short}: {long}"
+                long = short + ": " + long
 
             shortened_weather = {
                 'temp': int(owm_weather['main']['temp']),
