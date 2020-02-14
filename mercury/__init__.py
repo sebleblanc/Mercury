@@ -17,6 +17,7 @@ import struct
 import time
 import requests
 
+from mercury import gpio
 from mercury.utils import (
     setup_logging,
     log_thread_start,
@@ -52,18 +53,8 @@ htrstatus = htrstate[0]
 # 4 Weather data
 drawlist = [True, True, True, True, True]
 
-# Define GPIO inputs
-rotaryA = 7
-rotaryB = 11
-rotarybutton = 13
-resetbutton = 22
-
-# Define GPIO outputs
-speaker = 12
-
 # Name display screen elements
 screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
-
 
 configfile = get_config_file()
 
@@ -74,20 +65,6 @@ try:
     info("Heater connected via serial connection.")
 except:
     error("Failed to start serial connection.  The program will exit.")
-    run = False
-
-# Initialize GPIO
-debug("Setting GPIO modes...")
-try:
-    GPIO.setmode(GPIO.BOARD)
-    GPIO.setup(rotaryA, GPIO.IN)
-    GPIO.setup(rotaryB, GPIO.IN)
-    GPIO.setup(rotarybutton, GPIO.IN)
-    setup_playtone(speaker, 600)
-    info("Set GPIO: Rotary=%s,%s Button=%s Pcspkr=%s"
-         % (rotaryA, rotaryB, rotarybutton, speaker))
-except:
-    critical("GPIO init failed.  The program will exit.")
     run = False
 
 
@@ -622,6 +599,7 @@ def drawstatus(element):
             except:
                 displayfail()
 
+
 def redraw():
     global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
 
@@ -682,22 +660,20 @@ def rotaryevent(event):
     time.sleep(0.01)
 
 
-# This is the event callback routine to handle events
-def switch_event(event):
-    if event == RotaryEncoder.CLOCKWISE:
-        rotaryevent(1)
-    elif event == RotaryEncoder.ANTICLOCKWISE:
-        rotaryevent(2)
-
-
-# Define the switch
-rswitch = RotaryEncoder(rotaryA, rotaryB, rotarybutton, switch_event)
-
-
 @click.command()
 @click.option('-v', '--verbose', count=True)
 def main(verbose):
     global threads, toggledisplay
+
+    gpio.setup_gpio()
+
+    # Define the switch
+    RotaryEncoder(
+        gpio.ROTARY_A,
+        gpio.ROTARY_B,
+        gpio.BUTTON,
+        lambda e: gpio.switch_event(rotaryevent, e)
+    )
 
     threads = {
         "hvac": Thread(name='hvac', target=heartbeat),
