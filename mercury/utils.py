@@ -4,10 +4,23 @@ import atexit
 import copy
 import json
 import logging
+import serial
 import time
 
-from logging import critical, error, info
+from logging import critical, error, info, debug
 from os import environ, path
+
+
+def try_function(on_failure, method, *args, **kwargs):
+    '''Attempt to run method, passing arguments *args and **kwargs. If it
+    fails, defer to on_failure callback
+
+    '''
+
+    try:
+        method(*args, **kwargs)
+    except:
+        on_failure()
 
 
 def setup_logging(**kwargs):
@@ -18,6 +31,22 @@ def setup_logging(**kwargs):
     kwargs.setdefault('datefmt', '%Y-%m-%d %H:%M:%S')
 
     logging.basicConfig(**kwargs)
+
+
+def setup_serial(device='/dev/ttyUSB0', baudrate=9600):
+    debug("Getting heater serial connection...")
+
+    try:
+        ser = serial.Serial(device, baudrate, timeout=1)
+        info("Heater connected via serial connection.")
+
+    except:
+        error("Failed to start serial connection.  The program will exit.")
+        raise
+
+    else:
+        atexit.register(ser.close)
+        return ser
 
 
 def log_thread_start(func, thread):

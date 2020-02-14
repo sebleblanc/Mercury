@@ -1,6 +1,8 @@
 from RPi import GPIO
 from rotary_class import RotaryEncoder
 
+import atexit
+
 from logging import critical, info, debug
 
 ROTARY_A = 7
@@ -27,6 +29,8 @@ def setup_gpio(inputs=_DEFAULT, outputs=_DEFAULT):
         outputs = GPIO_DEFAULT_OUTPUTS
 
     debug('Setting GPIO modes...')
+
+    atexit.register(GPIO.cleanup)
 
     try:
         GPIO.setmode(GPIO.BOARD)
