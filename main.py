@@ -248,7 +248,7 @@ def getweather():
                 latest_weather = shortened_weather
                 info("Updated weather.  Temp: {temp}°C (feels like {feels}°C), {long}, "
                      "Humidity: {humidity}%, Pressure: {pressure}kPa".format(**latest_weather))
-            next_check_seconds = 900
+            next_check_seconds = 1800
 
         except:
             warning("Weather update failure.")
