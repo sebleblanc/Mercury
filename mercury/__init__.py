@@ -1,25 +1,24 @@
 from __future__ import print_function
-from rotary_class import RotaryEncoder
 from bme280 import readBME280All
-import I2C_LCD_driver as i2c_charLCD
-import RPi.GPIO as GPIO
 
+from enum import Enum
+from functools import partial
 from logging import critical, error, warning, info, debug
 from math import floor
 from threading import Thread
 
 import click
 import datetime
-import logging
-import serial
 import signal
 import struct
 import time
 import requests
 
-from mercury import gpio
+from mercury import drawing, gpio
 from mercury.utils import (
+    try_function,
     setup_logging,
+    setup_serial,
     log_thread_start,
     get_config_file,
     load_settings,
@@ -29,114 +28,76 @@ from mercury.utils import (
 )
 
 
-setup_logging(level=logging.INFO)
+class State:
+    '''Stores all mutable application state'''
 
-# Initialize variables
-tt_in = 0
-setback = 0
-forecast_day = 0
-latest_weather = None
-spressure = 0
-shumidity = 0
-blinker = True
-last_blinker_refresh = datetime.datetime.now()
-run = True
-toggledisplay = True
-refetch = True
-htrstate = ['Off', 'Fan only', 'Low Heat', 'Full Heat']
-htrstatus = htrstate[0]
+    def __init__(self):
+        self.tt_in = 0
+        self.setback = 0
+        self.forecast_day = 0
+        self.latest_weather = None
+        self.spressure = 0
+        self.shumidity = 0
+        self.blinker = True
+        self.last_blinker_refresh = datetime.datetime.now()
+        self.run = True
+        self.toggledisplay = True
+        self.refetch = True
+        self.htrstatus = HeaterState.OFF
 
-# 0 Heater status
-# 1 Time
-# 2 Setpoint
-# 3 Sensor data
-# 4 Weather data
-drawlist = [True, True, True, True, True]
+        self.setpoint = 20
 
-# Name display screen elements
-screenelements = ["Heater status", "Time", "Temperature setpoint", "Sensor info", "Weather info"]
+        # Defaults
+        self.setpoint = 20   # in celsius
+        self.sensortimeout = 300
+        self.heartbeatinterval = 30
+        self.temp_tolerance = 1.8
+        self.refreshrate = 0.1 		# in seconds
+        self.target_temp = self.setpoint
 
-configfile = get_config_file()
+        # 0 Heater status
+        # 1 Time
+        # 2 Setpoint
+        # 3 Sensor data
+        # 4 Weather data
+        self.drawlist = [True, True, True, True, True]
 
-# Arduino Serial connect
-debug("Getting heater serial connection...")
-try:
-    ser = serial.Serial('/dev/ttyUSB0',  9600, timeout=1)
-    info("Heater connected via serial connection.")
-except:
-    error("Failed to start serial connection.  The program will exit.")
-    run = False
+        self.configfile = None
 
-
-# (re)start char LCD
-def startlcd(retry):
-    global run, drawlist
-    try:
-        debug("Starting LCD display...")
-        trylcd = i2c_charLCD.lcd()
-        trylcd.backlight(1)
-        trylcd.lcd_clear()
-        info("Started LCD display.")
-        drawlist = [True, True, True, True, True]
-        return trylcd
-    except:
-        if not retry:
-            error("LCD display init failed.  The program will exit.")
-            run = False
-        else:
-            warning("LCD display init failed.")
-            return False
+        self.serial = None
+        self.lhs = [None, None, None]
 
 
-mylcd = startlcd(False)
+class HeaterState(Enum):
+    OFF = 0
+    FAN_ONLY = 1
+    LOW_HEAT = 2
+    FULL_HEAT = 3
 
+    @property
+    def pretty_name(self):
+        _pretty_names = {
+            HeaterState.OFF: 'OFF',
+            HeaterState.FAN_ONLY: 'FAN only',
+            HeaterState.LOW_HEAT: 'Low Heat',
+            HeaterState.FULL_HEAT: 'Full Heat',
+        }
 
-def displayfail():
-    global mylcd
-
-    warning("Communication failed with display, re-initializing...")
-    time.sleep(1)
-    mylcd = startlcd(True)
-    time.sleep(1)
-
-
-# Defaults
-setpoint = 20   # in celsius
-sensortimeout = 300
-heartbeatinterval = 30
-temp_tolerance = 1.8
-refreshrate = 0.1 		# in seconds
-target_temp = setpoint
-
-# Load saved data
-try:
-    config = load_settings(configfile)
-except FileNotFoundError:
-    critical('Config file (%s) does not exist!' % configfile)
-    raise
-
-
-setpoint = float(config['setpoint'])
-weatherapikey = config['weatherapikey']
-locationid = config['locationid']
+        return _pretty_names[self]
 
 
 # OS signal handler
 def handler_stop_signals(signum, frame):
-    global run
-    run = False
-
-
-signal.signal(signal.SIGINT, handler_stop_signals)
-signal.signal(signal.SIGTERM, handler_stop_signals)
+    state.run = False
 
 
 def getweather():
     '''Retrieve weather from OpenWeatherMap'''
 
-    global latest_weather, weatherapikey, locationid
+    weatherapikey = state.weatherapikey
+    locationid = state.locationid
 
-    log_thread_start(info, threads['weather'])
+    log_thread_start(info, state.threads['weather'])
 
     while True:
         base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
@@ -166,98 +127,107 @@ def getweather():
                 'long': str(long),
                 'humidity': str(owm_weather['main']['humidity']),
                 'pressure': str(owm_weather['main']['pressure']),
-                }
+            }
 
-            if latest_weather == shortened_weather:
+            if state.latest_weather == shortened_weather:
                 debug("No weather changes detected.")
             else:
-                latest_weather = shortened_weather
-                info("Updated weather.  Temp: {temp}°C (feels like {feels}°C), {long}, "
-                     "Humidity: {humidity}%, Pressure: {pressure}kPa".format(**latest_weather))
+                state.latest_weather = shortened_weather
+                info('Updated weather.  Temp: {temp}°C '
+                     '(feels like {feels}°C), {long}, '
+                     'Humidity: {humidity}%, Pressure: {pressure}kPa'
+                     .format(**state.latest_weather))
             next_check_seconds = 1800
 
         except:
             warning("Weather update failure.")
-            latest_weather = None
+            state.latest_weather = None
             next_check_seconds = 60
 
         finally:
-            drawlist[4] = True
+            state.drawlist[4] = True
             time.sleep(next_check_seconds)
 
 
 def fetchhtrstate():
-    output = (chr(9+48)+'\n').encode("utf-8")
+    output = (chr(9 + 48) + '\n').encode("utf-8")
 
     debug("sending status request (%s) to the heater" % output)
 
-    ser.write(output)
+    state.serial.write(output)
     time.sleep(0.1)
-    response = ser.readline()
+    response = state.serial.readline()
     if response != '':
-        state = (struct.unpack('>BBB', response)[0]-48)
+        st = (struct.unpack('>BBB', response)[0] - 48)
 
     else:
-        state = -1
+        st = None
+        return
 
-    if state != -1:
-        debug("heater returned state %s (%s)" % (state, htrstate[state]))
-
-    return state
+    try:
+        htst = HeaterState(st)
+    except ValueError as e:
+        error('invalid heater state (%s)' % e)
+    else:
+        debug("heater returned state %s (%s)" % (htst.name, htst.value))
+        return htst
 
 
 def heartbeat():
-    global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch
-    global heartbeatinterval
-
+    stemp = state.stemp
+    target_temp = state.target_temp
+    heartbeatinterval = state.heartbeatinterval
+    drawlist = state.drawlist
     lastfetch = datetime.datetime.now()
 
-    log_thread_start(info, threads['hvac'])
+    log_thread_start(info, state.threads['hvac'])
 
     while True:
-        while refetch:
+        while state.refetch:
             now = datetime.datetime.now()
-            previousstatus = htrstatus
+            previousstatus = state.htrstatus
             getstatus = -1
             debug("Trying to refetch heater status")
 
             try:
-                getstatus = fetchhtrstate()
+                current_status = fetchhtrstate()
 
                 time.sleep(0.1)
-                if getstatus > -1:
+                if getstatus is not None:
                     lastfetch = datetime.datetime.now()
-                    if htrstatus == htrstate[getstatus]:
+
+                    if state.htrstatus == current_status:
                         debug("no heater state change detected")
                     else:
-		        # -> redraw the status part of screen and
-		        #    remember/reset time, heater state, and
-		        #    temperature
+                        # -> redraw the status part of screen and
+                        #    remember/reset time, heater state, and
+                        #    temperature
                         drawlist[0] = True
-                        htrstatus = htrstate[getstatus]
-                        info(('Current: {stemp:.2f}°C,  Target: {target_temp:.2f}°C. '
-                              '{previousstatus!r} → now is {htrstatus!r}.').format(
-                            stemp=stemp,
-                            target_temp=target_temp,
-                            previousstatus=previousstatus,
-                            htrstatus=htrstatus))
+                        state.htrstatus = current_status
 
-                        lhs = [now, htrstatus, stemp]
-                else:
-                    error("Got invalid status: %r" % getstatus)
+                        info('Current: {stemp:.2f}°C, '
+                             'Target: {target_temp:.2f}°C. '
+                             '{previousstatus!r} → now is {heater_status!r}.'
+                             .format(
+                                 selftemp=stemp,
+                                 target_temp=target_temp,
+                                 previousstatus=previousstatus.pretty_name,
+                                 heater_status=state.htrstatus.pretty_name))
+
+                        state.lhs = [now, state.htrstatus, stemp]
 
             except:
                 warning("Failed to contact Arduino!")
 
             finally:
-                refetch = False
+                state.refetch = False
                 time.sleep(2)
 
-        while not refetch:
+        while not state.refetch:
             now = datetime.datetime.now()
 
-            if (now-lastfetch).total_seconds() >= heartbeatinterval:
-                refetch = True
+            if (now - lastfetch).total_seconds() >= heartbeatinterval:
+                state.refetch = True
 
             else:
                 time.sleep(2)
@@ -267,54 +237,60 @@ def smoothsensordata(samples, refresh):
     '''Average out sensor readings. Takes number of samples over a period
     of time (refresh)
     '''
-    global stemp, spressure, shumidity, sensortimeout, run
-
-    log_thread_start(info, threads['sensor'])
+    log_thread_start(info, state.threads['sensor'])
 
     sensortime = datetime.datetime.now()
 
-    while run:
+    while state.run:
         t, p, h = 0, 0, 0
         now = datetime.datetime.now()
         try:
             stemp, spressure, shumidity = readBME280All()
-            for a in range(0,  samples):
+            for a in range(0, samples):
                 temp, pressure, humidity = readBME280All()
-                t, p, h = t+temp, p+pressure, h+humidity
-                time.sleep(refresh/samples)
-            stemp, spressure, shumidity = t/samples, p/samples, h/samples
+
+                t += temp
+                p += pressure
+                h += humidity
+
+                time.sleep(refresh / samples)
+
+            state.stemp = t / samples
+            state.spressure = p / samples
+            state.shumidity = h / samples
+
             debug("Got sensor data: %s°C, %skPa, %s%%"
                   % (stemp, spressure, shumidity))
             sensortime = now
 
         except:
             warning("Sensor failure")
-            if (now-sensortime).total_seconds() >= sensortimeout:
+            if (now - sensortime).total_seconds() >= state.sensortimeout:
                 error("Timed out waiting for sensor data -- exiting!")
-                run = False
+                state.run = False
         finally:
-            drawlist[3] = True
+            state.drawlist[3] = True
             time.sleep(5)
 
 
 def checkschedule():
     # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
-    global setback, target_temp, setpoint, run
+    threads = state.threads
 
     log_thread_start(info, threads['schedule'])
 
-    while run:
-        awaytemp = -1.5
-        sleepingtemp = -0.5
+    workdays = range(0, 4)		# workdays
+    workhours = range(6, 17)
+    customwd = range(4, 5) 		# custom workday(s)
+    customwdhrs = range(6, 14)
 
+    awaytemp = -1.5
+    sleepingtemp = -0.5
+
+    while state.run:
         now = datetime.datetime.now()
         weekday = now.weekday()
         hour = now.hour + 1		# react an hour in advance
-
-        workdays = range(0, 4)		# workdays
-        workhours = range(6, 17)
-        customwd = range(4, 5) 		# custom workday(s)
-        customwdhrs = range(6, 14)
 
         if weekday in workdays:
             whrs = workhours
@@ -322,56 +298,61 @@ def checkschedule():
             whrs = customwdhrs
         else:
             whrs = []
-            setback = 0
+            state.setback = 0
         if hour in whrs:
-            setback = awaytemp
-        elif hour+1 in whrs:		# temp boost in the morning
-            setback = 1
+            state.setback = awaytemp
+        elif hour + 1 in whrs:		# temp boost in the morning
+            state.setback = 1
         else:
-            setback = 0
-        target_temp = setpoint + setback
-        drawlist[2] = True
+            state.setback = 0
+        state.target_temp = state.setpoint + state.setback
+        state.drawlist[2] = True
         time.sleep(300)
 
 
-def htrtoggle(state):
-    global htrstatus, htrstate, refetch, run
-    refetch = True
+def htrtoggle(st):
+    # Warning: parameter 'st' (formerly known as state) has nothing to do
+    # with the global value named 'state'
 
-    debug("checking current heater status (%s)" % refetch)
+    state.refetch = True
 
-    while run and refetch:
+    debug("checking current heater status (%s)" % state.refetch)
+
+    while state.run and state.refetch:
         time.sleep(0.1)
 
-    if htrstatus == htrstate[state]:
-        warning("toggled heater %s, but already set to %s." % (state, htrstatus))
+    if state.htrstatus == st:
+        warning("toggled heater %s, but already set to %s."
+                % (st, state.htrstatus))
 
     else:
-        output = (chr(state+48)+'\n').encode("utf-8")
-        ser.write(output)
+        output = (chr(st + 48) + '\n').encode("utf-8")
+        state.serial.write(output)
         time.sleep(0.1)
-        refetch = True
+        state.refetch = True
 
-        debug("sent state change to heater: %s" % state)
+        debug("sent state change to heater: %s" % st)
         debug("confirming heater status...")
 
-        while run and refetch:
+        while state.run and state.refetch:
             time.sleep(0.1)
 
-        if htrstatus == htrstate[state]:
-            info("Heater toggle succeeded: %s" % htrstatus)
-        elif htrstatus == htrstate[1]:
-            info("Heater toggle resulted in: %s" % htrstatus)
+        if state.htrstatus == HeaterState(st):
+            info("Heater toggle succeeded: %s" % state.htrstatus)
+        elif state.htrstatus == state.htrstate[1]:
+            info("Heater toggle resulted in: %s" % state.htrstatus)
         else:
-            error("Heater toggle failed: got %s, expected %s" %
-                  (htrstatus, htrstate[state]))
+            error("Heater toggle failed: got %s, expected %s"
+                  % (state.htrstatus, state.htrstate[st]))
 
 
 def thermostat():
-    global run, target_temp, setback, stemp, temp_tolerance, htrstatus
-    global htrstate, lhs
+    lhs = state.lhs
+
+    threads = state.threads
+
     info("Starting threads")
-    log_thread_start(info, threads['thermostat'])
+    log_thread_start(info, state.threads['thermostat'])
 
     # minimum threshold (in °C/hour) under which we switch to stage 2
     stage1min = 0.04
@@ -380,35 +361,35 @@ def thermostat():
     stage2max = 0.5
 
     # time (s) to wait before checking if we should change states
-    stage1timeout = 10*60
+    stage1timeout = 10 * 60
 
     # time until forced switch to stage 2
-    stage1maxtime = 60*60
-    stage2timeout = 10*60
+    stage1maxtime = 60 * 60
+    stage2timeout = 10 * 60
     fantimeout = 0
 
     # time we shold hope to stay off for
-    idletime = 30*60
+    idletime = 30 * 60
     # stdout updates and save settings
-    updatetimeout = 60*60
+    updatetimeout = 60 * 60
 
     threads['display'].start()
     threads['hvac'].start()
 
-    stemp = False
+    state.stemp = False
     threads['sensor'].start()
 
     debug("Waiting for sensor data...")
-    while run and not stemp:
+    while state.run and not state.stemp:
         time.sleep(1)
 
     debug("Waiting for hvac status...")
-    while run and not htrstatus:
+    while state.run and not state.htrstatus:
         time.sleep(1)
-    debug("Got hvac status: %s" % htrstatus)
+    debug("Got hvac status: %s" % state.htrstatus)
 
     # endtime, last state, last temp
-    lhs = [datetime.datetime.now(), htrstatus, stemp]
+    lhs = [datetime.datetime.now(), state.htrstatus, state.stemp]
 
     threads['schedule'].start()
     threads['weather'].start()
@@ -416,40 +397,46 @@ def thermostat():
 
     time.sleep(3)
 
-    info("Heater: %s, Temp: %s°C" % (htrstatus, stemp))
+    info("Heater: %s, Temp: %s°C" % (state.htrstatus, state.stemp))
 
-    while run:
+    while state.run:
         now = datetime.datetime.now()
-        tdelta = now - lhs[0]
+        tdelta = now - state.lhs[0]
         seconds = tdelta.total_seconds()
         lasttime = lhs[0]
         lasttemp = lhs[2]
+        stemp = state.stemp
+        stempdelta = stemp - lasttemp
+        current_htrstatus = state.htrstatus
+        setpoint = state.setpoint
+
         status_string = ('{htrstatus}, {stemp:.2f}°C, [{stempdelta:.2f}°C '
                          'since {timestamp} ({temprate:.2f}°C/hr)]'
                          .format(
-                             htrstatus=htrstatus,
+                             htrstatus=current_htrstatus,
                              stemp=stemp,
-                             stempdelta=stemp-lasttemp,
+                             stempdelta=stempdelta,
                              timestamp=lasttime.strftime('%H:%M:%S'),
-                             temprate=(stemp-lasttemp)/seconds*3600))
+                             temprate=stempdelta / seconds * 3600))
 
         # Shut off the heater if temperature reached,
         # unless the heater is already off (so we can continue to increase time
         # delta counter to check timeouts)
-        if (stemp >= target_temp+(temp_tolerance/3)
-                and htrstatus != htrstate[0]
-                and htrstatus != htrstate[1]):
+        if (stemp >= state.target_temp + (state.temp_tolerance / 3)
+                and current_htrstatus
+                not in [HeaterState.OFF,
+                        HeaterState.FAN_ONLY]):
             info("Temperature reached.")
-            htrtoggle(0)
+            htrtoggle(HeaterState.OFF)
 
         # Project temperature increase, if we will hit target temperature
-        elif htrstatus == htrstate[2]:
-            debug("staying %.1f minutes in stage 1" % (stage1timeout/60))
+        elif current_htrstatus == HeaterState.LOW_HEAT:
+            debug("staying %.1f minutes in stage 1" % (stage1timeout / 60))
 
             if seconds % stage1timeout <= 1:
                 if stemp + (stemp - lasttemp) > target_temp:
                     info('Predicted target temperature in {0:.1f} minutes.'
-                         .format(stage1timeout/60))
+                         .format(stage1timeout / 60))
 
                 if seconds >= stage1maxtime:
                     # We have been on stage 1 for too long -> go to stage 2
@@ -457,161 +444,97 @@ def thermostat():
                          'since {1} ({2} minutes ago)'
                          .format(stemp - lasttemp,
                                  lasttime.strftime("%H:%M:%S"),
-                                 floor(seconds/60)))
-                    htrtoggle(3)
-                # elif (stemp - lasttemp)*seconds < stage1min*3600:
-                # 	If heating too slowly -> go to stage 2
-                #     print (now, "Heating too slowly: (",(stemp - lasttemp)*seconds,"°C/hr ,min=", stage1min, "°C/hr)")
-                #     print (now, status_string)
-                #     htrtoggle(3)
+                                 floor(seconds / 60)))
+                    htrtoggle(HeaterState.FULL_HEAT)
 
-        elif htrstatus == htrstate[3]:
-            debug("staying %.1f minutes in stage 2" % (stage2timeout/60))
+        elif current_htrstatus == HeaterState.HIGH_HEAT:
+            debug("staying %.1f minutes in stage 2" % (stage2timeout / 60))
 
             if seconds % stage2timeout <= 1:
                 if stemp + (stemp - lasttemp) > target_temp:
-                    info('Predicted target temperature in %.1f minutes' % (stage2timeout/60))
-                    # htrtoggle(2)
-                # elif (stemp - lasttemp)*seconds >= stage2max*3600:    #       If heating too quickly -> stage 1.
-                #     print (now, "Heating too quickly: (", (stemp - lasttemp)*seconds, "°C/hr ,max=", stage2max, "°C/hr)")
-                #     print (now, status_string)
-                #     htrtoggle(2)
+                    info('Predicted target temperature in %.1f minutes'
+                         % (stage2timeout / 60))
 
-        elif htrstatus == htrstate[1]:
+        elif current_htrstatus == HeaterState.FAN_ONLY:
             pass
-            # print (int(fantimeout-floor(seconds%fantimeout)-1), "    Fan    ", end='\r')
-            # if seconds >= fantimeout:
-            #     print (now, status_string)
-            #     htrtoggle(0)
 
-        elif htrstatus == htrstate[0] or htrstatus == htrstate[1]:
+        elif current_htrstatus in (HeaterState.OFF, HeaterState.FAN_ONLY):
             # Temperature fell under the threshold, turning on
-            if stemp < target_temp - temp_tolerance:
+            if stemp < state.target_temp - state.temp_tolerance:
                 info("Temperature more than %.1f°C below setpoint."
-                     % temp_tolerance)
+                     % state.temp_tolerance)
                 if seconds > idletime:
-                    htrtoggle(2)
+                    htrtoggle(HeaterState.LOW_HEAT)
                 else:
-                    htrtoggle(3)
+                    htrtoggle(HeaterState.FULL_HEAT)
         else:
-            error("Bad heater status! %s not in %s" % (htrstatus, htrstate))
+            # We cannot reach this code unless there is a logic error
+            # or a new heater status level that was not fully implemented
+
+            critical("FIXME: Heater behavior not implemented!")
+            raise NotImplementedError('No heater behavior implemented '
+                                      'for status %s' % current_htrstatus)
 
         if seconds % updatetimeout <= 1:
             info(status_string)
-            save_settings(config, configfile, setpoint)
+            save_settings(state.config, state.configfile, setpoint)
 
         wait_time = (seconds % 1)
-        time.sleep(1.5-wait_time)		# sleep until next half second
+        time.sleep(1.5 - wait_time)		# sleep until next half second
 
 
 def drawstatus(element):
     # Draw mode 0 (status screen)
     # print ("refreshing screen element ", element)
-    global latest_weather, stemp, shumidity, target_temp, setpoint, htrstatus
-    global displayed_time, blinker, last_blinker_refresh
+
+    lcd = state.lcd
+
+    def try_draw(method, *args, **kwargs):
+        kwargs.setdefault(state=state, lcd=lcd)
+
+        try_function(partial(drawing.displayfail, state),
+                     method,
+                     *args,
+                     **kwargs)
 
     debug("refreshing screen element %s (%s)"
-          % (element, screenelements[element]))
+          % (element, drawing.get_screen_element_name(element)))
 
     # 0 - Heater Status
     if element == 0:
-        try:
-            mylcd.lcd_display_string(htrstatus.ljust(10), 1)
-        except:
-            displayfail()
+        try_draw(drawing.draw_heaterstatus)
 
     # 1 - Time
     elif element == 1:
-
-        if drawlist[1] == 2:
-            last_blinker_refresh = datetime.datetime.now()
-            if not blinker:
-                # blink colon off
-                blinker = True
-                try:
-                    mylcd.lcd_display_string(" ", 1, 17)
-                except:
-                    displayfail()
-
-            else:
-                # blink colon back on
-                blinker = False
-                try:
-                    mylcd.lcd_display_string(":", 1, 17)
-                except:
-                    displayfail()
-
-
-        else:
-            displayed_time = datetime.datetime.now()
-            if not blinker:
-                localtime = displayed_time.strftime('%H %M')
-            else:
-                localtime = displayed_time.strftime('%H:%M')
-            try:
-                mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
-            except:
-                displayfail()
-
+        try_draw(drawing.draw_time)
 
     # 2 - Temperature setting
     elif element == 2:
-        tt = '{0:.1f}'.format(target_temp) + chr(223) + "C"
-        tts = '{0:.1f}'.format(setpoint) + chr(223) + "C"
-        try:
-            mylcd.lcd_display_string(tts.center(20), 2)
-        except:
-            displayfail()
-
+        try_draw(drawing.draw_temp)
 
     # 3 - Sensor data
     elif element == 3:
-        if stemp is None:
-            sensortemp = 0
-        else:
-            sensortemp = stemp
-
-        sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
-        sensorhumidity = '{0:.0f}'.format(shumidity) + "%"
-        try:
-            mylcd.lcd_display_string(sensortemperature.ljust(6), 3)
-            mylcd.lcd_display_string(sensorhumidity.ljust(6), 4)
-        except:
-            displayfail()
+        try_draw(drawing.draw_sensor)
 
     # 4 - Weather data
     elif element == 4:
-        try:
-            outtemp = '{0:.0f}'.format(latest_weather['temp']) + chr(223) + "C"
-            cc = str(latest_weather['short'])
-            outhumidity = str(latest_weather['humidity']) + "%"
-
-        except:
-            outtemp = '--' + chr(223) + "C"
-            cc = "N/A"
-            outhumidity = "---%"
-
-        finally:
-            try:
-                mylcd.lcd_display_string(outtemp.rjust(5), 3, 15)
-                mylcd.lcd_display_string(cc.center(8), 4, 7)
-                mylcd.lcd_display_string(outhumidity.rjust(5), 4, 15)
-            except:
-                displayfail()
+        try_draw(drawing.draw_weather)
 
 
 def redraw():
-    global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
+    drawlist = state.drawlist
+    lcd = state.lcd
+    threads = state.threads
 
     log_thread_start(info, threads['display'])
 
     while True:
-        if not toggledisplay:
+        if not state.toggledisplay:
             try:
-                mylcd.lcd_clear()
-                mylcd.backlight(0)
+                lcd.lcd_clear()
+                lcd.backlight(0)
             except:
-                displayfail()
+                drawing.displayfail(state)
             return
 
         else:
@@ -623,59 +546,107 @@ def redraw():
 
         now = datetime.datetime.now()
         # Decide if we should redraw the time...
-        if (now - displayed_time) > datetime.timedelta(seconds=30):
+        if (now - state.displayed_time) > datetime.timedelta(seconds=30):
             drawlist[1] = True
         # ...or just the blinker
-        elif (now - last_blinker_refresh) >= datetime.timedelta(seconds=1):
+        elif ((now - state.last_blinker_refresh) >=
+              datetime.timedelta(seconds=1)):
             drawlist[1] = 2
 
-        time.sleep(refreshrate)
+        time.sleep(state.refreshrate)
 
 
 def ui_input():
-    global tt_in, setpoint, setback, target_temp, drawlist, run
+    threads = state.threads
+    drawlist = state.drawlist
 
     log_thread_start(info, threads['ui_input'])
 
     while True:
-        if tt_in != 0:
-            if setpoint+tt_in >= 0 <= 30:
-                setpoint += tt_in
-                target_temp = setpoint + setback
+        if state.tt_in != 0:
+            if state.setpoint + state.tt_in >= 0 <= 30:
+                state.setpoint += state.tt_in
+                state.target_temp = state.setpoint + state.setback
                 drawlist[2] = True
-            tt_in = 0
+            state.tt_in = 0
 
         time.sleep(0.3)
 
 
 # Define rotary actions depending on current mode
 def rotaryevent(event):
-    global tt_in
+
     if event == 1:
-        tt_in += 0.1
+        state.tt_in += 0.1
         playtone(1)
     elif event == 2:
-        tt_in -= 0.1
+        state.tt_in -= 0.1
         playtone(2)
     time.sleep(0.01)
 
 
 @click.command()
+@click.option('-c', '--config-file', type=click.Path(),
+              default=get_config_file)
+@click.option('-d', '--debug', type=bool)
 @click.option('-v', '--verbose', count=True)
-def main(verbose):
-    global threads, toggledisplay
+def main(config_file, verbose):
+    global state
+
+    if debug:
+        # debugging overrides verbosity
+        verbose = 10
+
+    # Verbosity starts at 0, most quiet, while Python logging has 50
+    # meaning critical errors only.  Therefore, we calculate verbosity
+    # by reversing the value and mapping it over 30–0
+    logging_level = max(0, (3 - verbose) * 10)
+    setup_logging(level=logging_level)
+
+    state = State()
+
+    state.configfile = config_file
+
+    state.lcd = drawing.startlcd(state, retry=False)
+
+    signal.signal(signal.SIGINT, handler_stop_signals)
+    signal.signal(signal.SIGTERM, handler_stop_signals)
+
+    try:
+        config = load_settings(config_file)
+    except FileNotFoundError:
+        critical('Config file (%s) does not exist!' % state.configfile)
+        raise
+
+    state.config = config
+
+    try:
+        state.setpoint = float(config['setpoint'])
+        state.weatherapikey = config['weatherapikey']
+        state.locationid = config['locationid']
+
+    except KeyError as e:
+        critical('Invalid configuration file, missing key %s'
+                 % e.args[0])
+
+    try:
+        serial = setup_serial()
+    except:
+        error("Could not setup serial device")
+    else:
+        state.serial = serial
 
     gpio.setup_gpio()
 
     # Define the switch
-    RotaryEncoder(
+    gpio.RotaryEncoder(
         gpio.ROTARY_A,
         gpio.ROTARY_B,
         gpio.BUTTON,
         lambda e: gpio.switch_event(rotaryevent, e)
     )
 
-    threads = {
+    state.threads = {
         "hvac": Thread(name='hvac', target=heartbeat),
         "schedule": Thread(name='schedule', target=checkschedule),
         "sensor": Thread(name='sensor', target=smoothsensordata,
@@ -686,24 +657,22 @@ def main(verbose):
         "weather": Thread(name='weather', target=getweather),
     }
 
-    for t in threads:
+    for t in state.threads:
         if t != "display":
-            threads[t].setDaemon(True)
+            state.threads[t].setDaemon(True)
 
-    threads['thermostat'].start()
+    state.threads['thermostat'].start()
 
-    while run:
+    while state.run:
         time.sleep(0.5)
 
     info("Aborting...")
 
-    save_settings(config, configfile, setpoint)
+    save_settings(state.config, state.configfile, state.setpoint)
 
-    toggledisplay = False
-    threads['display'].join()
+    state.toggledisplay = False
+    state.threads['display'].join()
 
-    GPIO.cleanup()
-    ser.close()
     info("EXIT: program exited.")
 
 
