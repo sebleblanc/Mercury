@@ -38,12 +38,13 @@ latest_weather = None
 spressure = 0
 shumidity = 0
 blinker = True
-last_blinker_refresh = datetime.datetime.now()
+last_blinker_refresh = time.monotonic()
 run = True
 toggledisplay = True
 refetch = True
 htrstate = ['Off', 'Fan only', 'Low Heat', 'Full Heat']
 htrstatus = htrstate[0]
+stemp = False
 
 # 0 Heater status
 # 1 Time
@@ -104,7 +105,7 @@ def startlcd(retry):
         return trylcd
     except:
         if not retry:
-            error("LCD display init failed.  The program will exit.")
+            critical("LCD display init failed.  The program will exit.")
             run = False
         else:
             warning("LCD display init failed.")
@@ -233,13 +234,13 @@ def heartbeat():
     global htrstatus, htrstate, drawlist, stemp, lhs, target_temp, refetch
     global heartbeatinterval
 
-    lastfetch = datetime.datetime.now()
+    lastfetch = time.monotonic()
 
     log_thread_start(info, threads['hvac'])
 
     while True:
         while refetch:
-            now = datetime.datetime.now()
+            now = time.monotonic()
             previousstatus = htrstatus
             getstatus = -1
             debug("Trying to refetch heater status")
@@ -249,7 +250,7 @@ def heartbeat():
 
                 time.sleep(0.1)
                 if getstatus > -1:
-                    lastfetch = datetime.datetime.now()
+                    lastfetch = time.monotonic()
                     if htrstatus == htrstate[getstatus]:
                         debug("no heater state change detected")
                     else:
@@ -265,7 +266,7 @@ def heartbeat():
                             previousstatus=previousstatus,
                             htrstatus=htrstatus))
 
-                        lhs = [now, htrstatus, stemp]
+                        lhs = [datetime.datetime.now(), htrstatus, stemp]
                 else:
                     error("Got invalid status: %r" % getstatus)
 
@@ -277,9 +278,9 @@ def heartbeat():
                 time.sleep(2)
 
         while not refetch:
-            now = datetime.datetime.now()
+            now = time.monotonic()
 
-            if (now-lastfetch).total_seconds() >= heartbeatinterval:
+            if (now-lastfetch) >= heartbeatinterval:
                 refetch = True
 
             else:
@@ -290,15 +291,15 @@ def smoothsensordata(samples, refresh):
     '''Average out sensor readings. Takes number of samples over a period
     of time (refresh)
     '''
-    global stemp, spressure, shumidity, sensortimeout, run
+    global  drawlist, run, shumidity, spressure, stemp, sensortimeout
 
     log_thread_start(info, threads['sensor'])
 
-    sensortime = datetime.datetime.now()
+    sensortime = time.monotonic()
 
     while run:
         t, p, h = 0, 0, 0
-        now = datetime.datetime.now()
+        now = time.monotonic()
         try:
             stemp, spressure, shumidity = readBME280All()
             for a in range(0,  samples):
@@ -358,7 +359,7 @@ def checkschedule():
 
 
 def htrtoggle(state):
-    global htrstatus, htrstate, refetch, run
+    global refetch
     refetch = True
 
     debug("checking current heater status (%s)" % refetch)
@@ -391,12 +392,11 @@ def htrtoggle(state):
 
 
 def thermostat():
-    global run, target_temp, setback, stemp, temp_tolerance, htrstatus
-    global htrstate, lhs
+    global lhs, run
     info("Starting threads")
     log_thread_start(info, threads['thermostat'])
 
-    # minimum threshold (in °C/hour) under which we switch to stage 2
+	# minimum threshold (in °C/hour) under which we switch to stage 2
     stage1min = 0.04
 
     # maximum threshold (in °C/hour) over which we switch to stage 1
@@ -418,16 +418,15 @@ def thermostat():
     threads['display'].start()
     threads['hvac'].start()
 
-    stemp = False
     threads['sensor'].start()
 
     debug("Waiting for sensor data...")
     while run and not stemp:
-        time.sleep(1)
+        time.sleep(0.5)
 
     debug("Waiting for hvac status...")
     while run and not htrstatus:
-        time.sleep(1)
+        time.sleep(0.5)
     debug("Got hvac status: %s" % htrstatus)
 
     # endtime, last state, last temp
@@ -547,7 +546,7 @@ def drawstatus(element):
     elif element == 1:
 
         if drawlist[1] == 2:
-            last_blinker_refresh = datetime.datetime.now()
+            last_blinker_refresh = time.monotonic()
             if not blinker:
                 # blink colon off
                 blinker = True
@@ -566,11 +565,11 @@ def drawstatus(element):
 
 
         else:
-            displayed_time = datetime.datetime.now()
+            displayed_time = time.monotonic()
             if not blinker:
-                localtime = displayed_time.strftime('%H %M')
+                localtime = datetime.datetime.now().strftime('%H %M')
             else:
-                localtime = displayed_time.strftime('%H:%M')
+                localtime = datetime.datetime.now().strftime('%H:%M')
             try:
                 mylcd.lcd_display_string(localtime.rjust(10), 1, 10)
             except:
@@ -623,7 +622,7 @@ def drawstatus(element):
                 displayfail()
 
 def redraw():
-    global drawlist, displayed_time, blinker, last_blinker_refresh, refreshrate
+    global drawlist
 
     log_thread_start(info, threads['display'])
 
@@ -633,7 +632,7 @@ def redraw():
                 mylcd.lcd_clear()
                 mylcd.backlight(0)
             except:
-                displayfail()
+                pass
             return
 
         else:
@@ -643,19 +642,19 @@ def redraw():
                     drawlist[i] = False
                     time.sleep(0.01)
 
-        now = datetime.datetime.now()
+        now = time.monotonic()
         # Decide if we should redraw the time...
-        if (now - displayed_time) > datetime.timedelta(seconds=30):
+        if (now - displayed_time) > 30:
             drawlist[1] = True
         # ...or just the blinker
-        elif (now - last_blinker_refresh) >= datetime.timedelta(seconds=1):
+        elif (now - last_blinker_refresh) >= 1:
             drawlist[1] = 2
 
         time.sleep(refreshrate)
 
 
 def ui_input():
-    global tt_in, setpoint, setback, target_temp, drawlist, run
+    global drawlist, setpoint, target_temp, tt_in
 
     log_thread_start(info, threads['ui_input'])
 
