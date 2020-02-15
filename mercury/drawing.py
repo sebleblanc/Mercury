@@ -23,7 +23,7 @@ def startlcd(state, retry=False):
         lcd.backlight(1)
         lcd.lcd_clear()
         info("Started LCD display.")
-        state.drawlist = [True, True, True, True, True]
+        state.drawlist[:] = [True, True, True, True, True]
     except:
         if not retry:
             error("LCD display init failed.  The program will exit.")
@@ -57,7 +57,7 @@ def draw_time(state, lcd):
 
         else:
             # blink colon back on
-            blinker = False
+            state.blinker = False
             lcd.lcd_display_string(":", 1, 17)
 
     else:

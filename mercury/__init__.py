@@ -532,7 +532,6 @@ def drawstatus(element):
 
 def redraw():
     drawlist = state.drawlist
-    lcd = state.lcd
     threads = state.threads
 
     log_thread_start(info, threads['display'])
@@ -540,8 +539,8 @@ def redraw():
     while True:
         if not state.toggledisplay:
             try:
-                lcd.lcd_clear()
-                lcd.backlight(0)
+                state.lcd.lcd_clear()
+                state.lcd.backlight(0)
             except:
                 pass
             return
