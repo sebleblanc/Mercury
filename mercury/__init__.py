@@ -152,7 +152,7 @@ def getweather():
 
 
 def fetchhtrstate(serial):
-    output = (chr(9 + 48) + '\n').encode("utf-8")
+    output = b'9\n'
 
     debug("sending status request (%s) to the heater" % output)
 
@@ -177,6 +177,7 @@ def fetchhtrstate(serial):
 
 
 def heartbeat():
+    lhs = state.lhs
     stemp = state.stemp
     target_temp = state.target_temp
     heartbeatinterval = state.heartbeatinterval
@@ -218,9 +219,9 @@ def heartbeat():
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
 
-                        state.lhs = [datetime.datetime.now(),
-                                     state.htrstatus,
-                                     state.stemp]
+                        lhs[:] = [datetime.datetime.now(),
+                                  state.htrstatus,
+                                  state.stemp]
                 else:
                     error("Got invalid status: %r" % getstatus)
 
@@ -335,7 +336,7 @@ def htrtoggle(st):
                 % (st, state.htrstatus))
 
     else:
-        output = (chr(st + 48) + '\n').encode("utf-8")
+        output = b'%d\n' % st.value
         state.serial.write(output)
         sleep(0.1)
         state.refetch = True
@@ -398,7 +399,7 @@ def thermostat():
     debug("Got hvac status: %s" % state.htrstatus)
 
     # endtime, last state, last temp
-    lhs = [datetime.datetime.now(), state.htrstatus, state.stemp]
+    lhs[:] = [datetime.datetime.now(), state.htrstatus, state.stemp]
 
     threads['schedule'].start()
     threads['weather'].start()
@@ -456,11 +457,11 @@ def thermostat():
                                  floor(seconds / 60)))
                     htrtoggle(HeaterState.FULL_HEAT)
 
-        elif current_htrstatus == HeaterState.HIGH_HEAT:
+        elif current_htrstatus == HeaterState.FULL_HEAT:
             debug("staying %.1f minutes in stage 2" % (stage2timeout / 60))
 
             if seconds % stage2timeout <= 1:
-                if stemp + (stemp - lasttemp) > target_temp:
+                if stemp + (stemp - lasttemp) > state.target_temp:
                     info('Predicted target temperature in %.1f minutes'
                          % (stage2timeout / 60))
 
@@ -499,7 +500,8 @@ def drawstatus(element):
     lcd = state.lcd
 
     def try_draw(method, *args, **kwargs):
-        kwargs.setdefault(state=state, lcd=lcd)
+        kwargs.setdefault('state', state)
+        kwargs.setdefault('lcd', lcd)
 
         try_function(partial(drawing.displayfail, state),
                      method,
