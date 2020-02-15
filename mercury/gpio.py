@@ -46,13 +46,13 @@ def setup_gpio(inputs=_DEFAULT, outputs=_DEFAULT):
         raise
 
     # Inputs
-    msg = ' '.join('%s=%s'.format(key, value)
+    msg = ' '.join('{}={}'.format(key, value)
                    for key, value in inputs.items())
 
     info('Set GPIO inputs: %s' % msg)
 
     # Outputs
-    msg = ' '.join('%s=%s'.format(key, value)
+    msg = ' '.join('{}={}'.format(key, value)
                    for key, value in outputs.items())
     info('Set GPIO outputs: %s' % msg)
 
