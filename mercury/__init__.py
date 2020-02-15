@@ -5,6 +5,7 @@ from enum import Enum
 from functools import partial
 from logging import critical, error, warning, info, debug
 from math import floor
+from time import monotonic, sleep
 from threading import Thread
 
 import click
@@ -36,10 +37,11 @@ class State:
         self.setback = 0
         self.forecast_day = 0
         self.latest_weather = None
+        self.stemp = False
         self.spressure = 0
         self.shumidity = 0
         self.blinker = True
-        self.last_blinker_refresh = datetime.datetime.now()
+        self.last_blinker_refresh = monotonic()
         self.run = True
         self.toggledisplay = True
         self.refetch = True
@@ -146,17 +148,17 @@ def getweather():
 
         finally:
             state.drawlist[4] = True
-            time.sleep(next_check_seconds)
+            sleep(next_check_seconds)
 
 
-def fetchhtrstate():
+def fetchhtrstate(serial):
     output = (chr(9 + 48) + '\n').encode("utf-8")
 
     debug("sending status request (%s) to the heater" % output)
 
-    state.serial.write(output)
-    time.sleep(0.1)
-    response = state.serial.readline()
+    serial.write(output)
+    sleep(0.1)
+    response = serial.readline()
     if response != '':
         st = (struct.unpack('>BBB', response)[0] - 48)
 
@@ -168,6 +170,7 @@ def fetchhtrstate():
         htst = HeaterState(st)
     except ValueError as e:
         error('invalid heater state (%s)' % e)
+        return
     else:
         debug("heater returned state %s (%s)" % (htst.name, htst.value))
         return htst
@@ -178,23 +181,24 @@ def heartbeat():
     target_temp = state.target_temp
     heartbeatinterval = state.heartbeatinterval
     drawlist = state.drawlist
-    lastfetch = datetime.datetime.now()
+    lastfetch = monotonic()
 
     log_thread_start(info, state.threads['hvac'])
 
     while True:
         while state.refetch:
-            now = datetime.datetime.now()
+            now = monotonic()
             previousstatus = state.htrstatus
             getstatus = -1
             debug("Trying to refetch heater status")
 
             try:
-                current_status = fetchhtrstate()
+                current_status = fetchhtrstate(state.serial)
 
-                time.sleep(0.1)
+                sleep(0.1)
+
                 if getstatus is not None:
-                    lastfetch = datetime.datetime.now()
+                    lastfetch = monotonic()
 
                     if state.htrstatus == current_status:
                         debug("no heater state change detected")
@@ -214,36 +218,42 @@ def heartbeat():
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
 
-                        state.lhs = [now, state.htrstatus, stemp]
+                        state.lhs = [datetime.datetime.now(),
+                                     state.htrstatus,
+                                     state.stemp]
+                else:
+                    error("Got invalid status: %r" % getstatus)
 
             except:
                 warning("Failed to contact Arduino!")
 
             finally:
                 state.refetch = False
-                time.sleep(2)
+                sleep(2)
 
         while not state.refetch:
-            now = datetime.datetime.now()
+            now = monotonic()
 
-            if (now - lastfetch).total_seconds() >= heartbeatinterval:
+            if (now - lastfetch) >= heartbeatinterval:
                 state.refetch = True
 
             else:
-                time.sleep(2)
+                sleep(2)
 
 
 def smoothsensordata(samples, refresh):
     '''Average out sensor readings. Takes number of samples over a period
     of time (refresh)
     '''
-    log_thread_start(info, state.threads['sensor'])
+    threads = state.threads
 
-    sensortime = datetime.datetime.now()
+    log_thread_start(info, threads['sensor'])
+
+    sensortime = monotonic()
 
     while state.run:
         t, p, h = 0, 0, 0
-        now = datetime.datetime.now()
+        now = monotonic()
         try:
             stemp, spressure, shumidity = readBME280All()
             for a in range(0, samples):
@@ -253,7 +263,7 @@ def smoothsensordata(samples, refresh):
                 p += pressure
                 h += humidity
 
-                time.sleep(refresh / samples)
+                sleep(refresh / samples)
 
             state.stemp = t / samples
             state.spressure = p / samples
@@ -270,7 +280,7 @@ def smoothsensordata(samples, refresh):
                 state.run = False
         finally:
             state.drawlist[3] = True
-            time.sleep(5)
+            sleep(5)
 
 
 def checkschedule():
@@ -307,19 +317,18 @@ def checkschedule():
             state.setback = 0
         state.target_temp = state.setpoint + state.setback
         state.drawlist[2] = True
-        time.sleep(300)
+        sleep(300)
 
 
 def htrtoggle(st):
     # Warning: parameter 'st' (formerly known as state) has nothing to do
     # with the global value named 'state'
-
     state.refetch = True
 
     debug("checking current heater status (%s)" % state.refetch)
 
     while state.run and state.refetch:
-        time.sleep(0.1)
+        sleep(0.1)
 
     if state.htrstatus == st:
         warning("toggled heater %s, but already set to %s."
@@ -328,14 +337,14 @@ def htrtoggle(st):
     else:
         output = (chr(st + 48) + '\n').encode("utf-8")
         state.serial.write(output)
-        time.sleep(0.1)
+        sleep(0.1)
         state.refetch = True
 
         debug("sent state change to heater: %s" % st)
         debug("confirming heater status...")
 
         while state.run and state.refetch:
-            time.sleep(0.1)
+            sleep(0.1)
 
         if state.htrstatus == HeaterState(st):
             info("Heater toggle succeeded: %s" % state.htrstatus)
@@ -381,11 +390,11 @@ def thermostat():
 
     debug("Waiting for sensor data...")
     while state.run and not state.stemp:
-        time.sleep(1)
+        sleep(0.5)
 
     debug("Waiting for hvac status...")
     while state.run and not state.htrstatus:
-        time.sleep(1)
+        sleep(0.5)
     debug("Got hvac status: %s" % state.htrstatus)
 
     # endtime, last state, last temp
@@ -395,7 +404,7 @@ def thermostat():
     threads['weather'].start()
     threads['ui_input'].start()
 
-    time.sleep(3)
+    sleep(3)
 
     info("Heater: %s, Temp: %s°C" % (state.htrstatus, state.stemp))
 
@@ -434,7 +443,7 @@ def thermostat():
             debug("staying %.1f minutes in stage 1" % (stage1timeout / 60))
 
             if seconds % stage1timeout <= 1:
-                if stemp + (stemp - lasttemp) > target_temp:
+                if stemp + (stemp - lasttemp) > state.target_temp:
                     info('Predicted target temperature in {0:.1f} minutes.'
                          .format(stage1timeout / 60))
 
@@ -480,7 +489,7 @@ def thermostat():
             save_settings(state.config, state.configfile, setpoint)
 
         wait_time = (seconds % 1)
-        time.sleep(1.5 - wait_time)		# sleep until next half second
+        sleep(1.5 - wait_time)		# sleep until next half second
 
 
 def drawstatus(element):
@@ -534,7 +543,7 @@ def redraw():
                 lcd.lcd_clear()
                 lcd.backlight(0)
             except:
-                drawing.displayfail(state)
+                pass
             return
 
         else:
@@ -542,18 +551,17 @@ def redraw():
                 if drawlist[i]:
                     drawstatus(i)
                     drawlist[i] = False
-                    time.sleep(0.01)
+                    sleep(0.01)
 
-        now = datetime.datetime.now()
+        now = monotonic()
         # Decide if we should redraw the time...
-        if (now - state.displayed_time) > datetime.timedelta(seconds=30):
+        if (now - state.displayed_time) > 30:
             drawlist[1] = True
         # ...or just the blinker
-        elif ((now - state.last_blinker_refresh) >=
-              datetime.timedelta(seconds=1)):
+        elif (now - state.last_blinker_refresh) >= 1:
             drawlist[1] = 2
 
-        time.sleep(state.refreshrate)
+        sleep(state.refreshrate)
 
 
 def ui_input():
@@ -570,7 +578,7 @@ def ui_input():
                 drawlist[2] = True
             state.tt_in = 0
 
-        time.sleep(0.3)
+        sleep(0.3)
 
 
 # Define rotary actions depending on current mode
@@ -582,7 +590,7 @@ def rotaryevent(event):
     elif event == 2:
         state.tt_in -= 0.1
         playtone(2)
-    time.sleep(0.01)
+    sleep(0.01)
 
 
 @click.command()
@@ -664,7 +672,7 @@ def main(config_file, verbose):
     state.threads['thermostat'].start()
 
     while state.run:
-        time.sleep(0.5)
+        sleep(0.5)
 
     info("Aborting...")
 

@@ -1,7 +1,7 @@
 import I2C_LCD_driver as i2c_charLCD
 
 from datetime import datetime
-from time import sleep
+from time import sleep, monotonic
 
 from logging import error, warning, info, debug
 
@@ -49,7 +49,7 @@ def draw_heaterstatus(state, lcd):
 
 def draw_time(state, lcd):
     if state.drawlist[1] == 2:
-        state.last_blinker_refresh = datetime.now()
+        state.last_blinker_refresh = monotonic()
 
         if not state.blinker:
             # blink colon off
@@ -62,7 +62,7 @@ def draw_time(state, lcd):
             lcd.lcd_display_string(":", 1, 17)
 
     else:
-        state.displayed_time = datetime.now()
+        state.displayed_time = monotonic()
 
         if not blinker:
             localtime = state.displayed_time.strftime('%H %M')
