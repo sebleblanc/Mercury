@@ -19,9 +19,9 @@ def try_function(on_failure, method, *args, **kwargs):
 
     try:
         method(*args, **kwargs)
-    except Exception as e:
-        warning("Failed to run function %s.%s"
-                % (method.__module__, method.__name__))
+    except Exception:
+        logging.exception("Failed to run function %s.%s"
+                          % (method.__module__, method.__name__))
         on_failure()
 
 
