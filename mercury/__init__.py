@@ -497,11 +497,9 @@ def drawstatus(element):
     # Draw mode 0 (status screen)
     # print ("refreshing screen element ", element)
 
-    lcd = state.lcd
-
     def try_draw(method, *args, **kwargs):
         kwargs.setdefault('state', state)
-        kwargs.setdefault('lcd', lcd)
+        kwargs.setdefault('lcd', state.lcd)
 
         try_function(partial(drawing.displayfail, state),
                      method,

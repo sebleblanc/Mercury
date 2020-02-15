@@ -1,6 +1,5 @@
 import I2C_LCD_driver as i2c_charLCD
 
-from datetime import datetime
 from time import sleep, monotonic
 
 from logging import error, warning, info, debug
