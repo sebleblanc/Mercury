@@ -600,7 +600,7 @@ def rotaryevent(event):
               default=get_config_file)
 @click.option('-d', '--debug', type=bool)
 @click.option('-v', '--verbose', count=True)
-def main(config_file, verbose):
+def main(config_file, debug, verbose):
     global state
 
     if debug:
