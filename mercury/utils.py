@@ -26,6 +26,7 @@ def try_function(on_failure, method, *args, **kwargs):
 def setup_logging(**kwargs):
     '''Setup logging so that it includes timestamps.'''
 
+    kwargs.setdefault('force', True)
     kwargs.setdefault('level', logging.INFO)
     kwargs.setdefault('format', '%(levelname)-8s %(message)s')
     kwargs.setdefault('datefmt', '%Y-%m-%d %H:%M:%S')
