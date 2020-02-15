@@ -41,7 +41,8 @@ class State:
         self.spressure = 0
         self.shumidity = 0
         self.blinker = True
-        self.last_blinker_refresh = monotonic()
+        self.displayed_time_last_refresh = 0
+        self.blinker_last_refresh = 0
         self.run = True
         self.toggledisplay = True
         self.refetch = True
@@ -554,10 +555,10 @@ def redraw():
 
         now = monotonic()
         # Decide if we should redraw the time...
-        if (now - state.displayed_time) > 30:
+        if (now - state.displayed_time_last_refresh) > 30:
             drawlist[1] = True
         # ...or just the blinker
-        elif (now - state.last_blinker_refresh) >= 1:
+        elif (now - state.blinker_last_refresh) >= 1:
             drawlist[1] = 2
 
         sleep(state.refreshrate)
