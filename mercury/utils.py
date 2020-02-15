@@ -7,7 +7,7 @@ import logging
 import serial
 import time
 
-from logging import critical, error, info, debug
+from logging import critical, error, warning, info, debug
 from os import environ, path
 
 

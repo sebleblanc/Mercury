@@ -12,7 +12,6 @@ import click
 import datetime
 import signal
 import struct
-import time
 import requests
 
 from mercury import drawing, gpio
@@ -24,7 +23,6 @@ from mercury.utils import (
     get_config_file,
     load_settings,
     save_settings,
-    setup_playtone,
     playtone,
 )
 
