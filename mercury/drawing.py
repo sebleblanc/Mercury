@@ -1,9 +1,8 @@
 import I2C_LCD_driver as i2c_charLCD
 
 from datetime import datetime
-from time import sleep, monotonic
-
 from logging import error, warning, info, debug
+from time import sleep, monotonic
 
 
 def get_screen_element_name(i):
