@@ -118,8 +118,10 @@ def getweather():
             long = owm_weather['weather'][0]['description']
             if long.lower() == short.lower():
                 long = short
+            elif short.lower() in long.lower():
+                long = long.capitalize()
             else:
-                long = short + ": " + long
+                long = ("%s: %s" % (short, long))
 
             shortened_weather = {
                 'temp': int(owm_weather['main']['temp']),
@@ -423,7 +425,7 @@ def thermostat():
         status_string = ('{htrstatus}, {stemp:.2f}°C, [{stempdelta:.2f}°C '
                          'since {timestamp} ({temprate:.2f}°C/hr)]'
                          .format(
-                             htrstatus=current_htrstatus,
+                             htrstatus=current_htrstatus.pretty_name,
                              stemp=stemp,
                              stempdelta=stempdelta,
                              timestamp=lasttime.strftime('%H:%M:%S'),
