@@ -108,5 +108,5 @@ def draw_weather(state, lcd):
 
     finally:
         lcd.lcd_display_string(outtemp.rjust(5), 3, 15)
-        lcd.lcd_display_string(cc.center(8), 4, 7)
+        lcd.lcd_display_string(cc.ljust(8), 4, 7)
         lcd.lcd_display_string(outhumidity.rjust(5), 4, 15)
