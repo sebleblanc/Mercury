@@ -595,7 +595,7 @@ def rotaryevent(event):
 @click.command()
 @click.option('-c', '--config-file', type=click.Path(),
               default=get_config_file)
-@click.option('-d', '--debug', type=bool)
+@click.option('-d', '--debug', is_flag=True)
 @click.option('-v', '--verbose', count=True)
 def main(config_file, debug, verbose):
     global state
@@ -607,7 +607,7 @@ def main(config_file, debug, verbose):
     # Verbosity starts at 0, most quiet, while Python logging has 50
     # meaning critical errors only.  Therefore, we calculate verbosity
     # by reversing the value and mapping it over 30–0
-    logging_level = max(0, (3 - verbose) * 10)
+    logging_level = max(1, (3 - verbose)) * 10
     setup_logging(level=logging_level)
 
     state = State()
