@@ -73,7 +73,8 @@ def draw_time(state, lcd):
 
 
 def draw_temp(state, lcd):
-    tts = '{0:.1f}°C'.format(state.setpoint)
+    # tt = '{0:.1f}'.format(state.target_temp) + chr(223) + "C"
+    tts = '{0:.1f}'.format(state.setpoint) + chr(223) + "C"
 
     lcd.lcd_display_string(tts.center(20), 2)
 
@@ -86,8 +87,8 @@ def draw_sensor(state, lcd):
 
     sensorhumidity = state.shumidity
 
-    sensortemperature = '{:.1f}°C'.format(sensortemp)
-    sensorhumidity = '{:.0f}%'.format(sensorhumidity)
+    sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
+    sensorhumidity = '{0:.0f}'.format(sensorhumidity) + "%"
 
     lcd.lcd_display_string(sensortemperature.ljust(6), 3)
     lcd.lcd_display_string(sensorhumidity.ljust(6), 4)
@@ -97,12 +98,12 @@ def draw_weather(state, lcd):
     latest_weather = state.latest_weather
 
     try:
-        outtemp = '{0:.0f}°C'.format(latest_weather['temp'])
+        outtemp = '{0:.0f}'.format(latest_weather['temp']) + chr(223) + "C"
         cc = str(latest_weather['short'])
         outhumidity = str(latest_weather['humidity']) + "%"
 
     except:
-        outtemp = '--°C'
+        outtemp = '--' + chr(223) + "C"
         cc = "N/A"
         outhumidity = "---%"
 
