@@ -683,4 +683,4 @@ def main(config_file, debug, verbose):
 
 
 if __name__ == '__main__':
-    main()
+    main(auto_envvar_prefix="MERCURY")
