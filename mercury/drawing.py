@@ -48,7 +48,7 @@ def draw_heaterstatus(state, lcd):
 
 def draw_time(state, lcd):
     if state.drawlist[1] == 2:
-        state.last_blinker_refresh = monotonic()
+        state.blinker_last_refresh = monotonic()
 
         if not state.blinker:
             # blink colon off
@@ -61,12 +61,12 @@ def draw_time(state, lcd):
             lcd.lcd_display_string(":", 1, 17)
 
     else:
-        state.displayed_time = monotonic()
+        state.displayed_time_last_refresh = monotonic()
 
-        if not blinker:
-            localtime = state.displayed_time.strftime('%H %M')
+        if not state.blinker:
+            localtime = datetime.now().strftime('%H %M')
         else:
-            localtime = state.displayed_time.strftime('%H:%M')
+            localtime = datetime.now().strftime('%H:%M')
 
         lcd.lcd_display_string(localtime.rjust(10), 1, 10)
 
