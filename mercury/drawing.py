@@ -44,7 +44,8 @@ def displayfail(state):
 
 
 def draw_heaterstatus(state, lcd):
-    lcd.lcd_display_string(state.htrstatus.ljust(10), 1)
+    state_name = state.htrstatus.pretty_name
+    lcd.lcd_display_string(state_name.ljust(10), 1)
 
 
 def draw_time(state, lcd):
