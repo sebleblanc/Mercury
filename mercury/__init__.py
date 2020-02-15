@@ -406,7 +406,8 @@ def thermostat():
 
     sleep(3)
 
-    info("Heater: %s, Temp: %s°C" % (state.htrstatus, state.stemp))
+    info("Heater: %s, Temp: %s°C" % (state.htrstatus.pretty_name,
+                                     '{0:.1f}'.format(state.stemp)))
 
     while state.run:
         now = datetime.datetime.now()
