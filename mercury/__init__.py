@@ -215,7 +215,7 @@ def heartbeat():
                              'Target: {target_temp:.2f}°C. '
                              '{previousstatus!r} → now is {heater_status!r}.'
                              .format(
-                                 selftemp=stemp,
+                                 stemp=stemp,
                                  target_temp=target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
