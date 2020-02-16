@@ -95,55 +95,64 @@ def getweather():
 
     weatherapikey = state.weatherapikey
     locationid = state.locationid
+    base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
+                    '?appid={key}'
+                    '&id={loc}'
+                    '&units={units}')
+    owm_url = base_owm_url.format(key=weatherapikey,
+                                  loc=locationid,
+                                  units='metric')
 
     log_thread_start(info, state.threads['weather'])
 
     while True:
-        base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
-                        '?appid={key}'
-                        '&id={loc}'
-                        '&units={units}')
+
+        next_check_seconds = 1800
+
+        debug("checking weather data using %s" % owm_url)
+
         try:
-            owm_url = base_owm_url.format(key=weatherapikey,
-                                          loc=locationid,
-                                          units='metric')
-            debug("checking weather data using %s" % owm_url)
             response = requests.get(owm_url)
+            debug("Got reponse '%s' from OpenWeatherMap" % response)
             owm_weather = response.json()
-
-            # Make a simpler dict
-            short = owm_weather['weather'][0]['main']
-            long = owm_weather['weather'][0]['description']
-            if long.lower() == short.lower():
-                long = short
-            elif short.lower() in long.lower():
-                long = long.capitalize()
-            else:
-                long = ("%s: %s" % (short, long))
-
-            shortened_weather = {
-                'temp': int(owm_weather['main']['temp']),
-                'feels': int(owm_weather['main']['feels_like']),
-                'short': str(owm_weather['weather'][0]['main']),
-                'long': str(long),
-                'humidity': str(owm_weather['main']['humidity']),
-                'pressure': str(owm_weather['main']['pressure']),
-            }
-
-            if state.latest_weather == shortened_weather:
-                debug("No weather changes detected.")
-            else:
-                state.latest_weather = shortened_weather
-                info('Updated weather.  Temp: {temp}°C '
-                     '(feels like {feels}°C), {long}, '
-                     'Humidity: {humidity}%, Pressure: {pressure}kPa'
-                     .format(**state.latest_weather))
-            next_check_seconds = 1800
-
-        except:
-            warning("Weather update failure.")
+            debug("OpenWeatherMap object: %s" % owm_weather)
+        except BaseException as e:
+            warning("Weather retrieval failure. (%s)" % e)
             state.latest_weather = None
             next_check_seconds = 60
+        else:
+
+            try:
+                short = owm_weather['weather'][0]['main']
+                long = owm_weather['weather'][0]['description']
+            except BaseException:
+                warning("Invalid weather object. (%s)" % owm_weather)
+                next_check_seconds = 60
+            else:
+
+                if long.lower() == short.lower():
+                    long = short
+                elif short.lower() in long.lower():
+                    long = long.capitalize()
+                else:
+                    long = ("%s: %s" % (short, long))
+                    shortened_weather = {
+                        'temp': int(owm_weather['main']['temp']),
+                        'feels': int(owm_weather['main']['feels_like']),
+                        'short': str(owm_weather['weather'][0]['main']),
+                        'long': str(long),
+                        'humidity': str(owm_weather['main']['humidity']),
+                        'pressure': str(owm_weather['main']['pressure']),
+                        }
+
+                    if state.latest_weather == shortened_weather:
+                        debug("No weather changes detected.")
+                    else:
+                        state.latest_weather = shortened_weather
+                        info('Updated weather.  Temp: {temp}°C '
+                             '(feels like {feels}°C), {long}, '
+                             'Humidity: {humidity}%, Pressure: {pressure}kPa'
+                             .format(**state.latest_weather))
 
         finally:
             state.drawlist[4] = True
