@@ -630,20 +630,22 @@ def main(config_file, debug, verbose):
 
     try:
         config = load_settings(config_file)
-    except FileNotFoundError:
-        critical('Config file (%s) does not exist!' % state.configfile)
-        raise
-
-    state.config = config
+        state.config = config
+    except BaseException:
+        config = {
+                  'setpoint': state.setpoint,
+                  'weatherapikey': "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                  'locationid': "1234567"}
 
     try:
         state.setpoint = float(config['setpoint'])
         state.weatherapikey = config['weatherapikey']
         state.locationid = config['locationid']
-
     except KeyError as e:
-        critical('Invalid configuration file, missing key %s'
-                 % e.args[0])
+        error('Invalid configuration file, missing key %s'
+              % e.args[0])
+    except BaseException as e:
+        error('Problem with configuration file. (%s)' % e)
 
     try:
         serial = setup_serial()
