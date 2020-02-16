@@ -334,7 +334,7 @@ def htrtoggle(st):
 
     if state.htrstatus == st:
         warning("toggled heater %s, but already set to %s."
-                % (st, state.htrstatus))
+                % (st, state.htrstatus.pretty_name))
 
     else:
         output = b'%d\n' % st.value
@@ -349,9 +349,9 @@ def htrtoggle(st):
             sleep(0.1)
 
         if state.htrstatus == HeaterState(st):
-            info("Heater toggle succeeded: %s" % state.htrstatus)
+            info("Heater toggle succeeded: %s" % state.htrstatus.pretty_name)
         elif state.htrstatus == HeaterState.FAN_ONLY:
-            info("Heater toggle resulted in: %s" % state.htrstatus)
+            info("Heater toggle resulted in: %s" % state.htrstatus.pretty_name)
         else:
             error("Heater toggle failed: got %s, expected %s"
                   % (state.htrstatus, HeaterState(st)))
