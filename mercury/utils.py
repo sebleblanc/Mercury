@@ -93,7 +93,7 @@ def save_settings(config, config_file, setpoint):
         json.dump(saveconfig, f)
 
     info("Settings saved to %s. Setpoint: %s°C"
-         % (config_file, str(setpoint)))
+         % (config_file, str(savesetpoint)))
 
 
 def setup_playtone(speaker_pin, magic_number=600):
