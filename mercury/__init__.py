@@ -350,11 +350,11 @@ def htrtoggle(st):
 
         if state.htrstatus == HeaterState(st):
             info("Heater toggle succeeded: %s" % state.htrstatus)
-        elif state.htrstatus == state.htrstate[1]:
+        elif state.htrstatus == HeaterState.FAN_ONLY:
             info("Heater toggle resulted in: %s" % state.htrstatus)
         else:
             error("Heater toggle failed: got %s, expected %s"
-                  % (state.htrstatus, state.htrstate[st]))
+                  % (state.htrstatus, HeaterState(st)))
 
 
 def thermostat():
