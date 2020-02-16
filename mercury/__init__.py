@@ -219,12 +219,8 @@ def heartbeat():
                     if state.htrstatus == current_status:
                         debug("no heater state change detected")
                     else:
-                        # -> redraw the status part of screen and
-                        #    remember/reset time, heater state, and
-                        #    temperature
                         drawlist[0] = True
                         state.htrstatus = current_status
-
                         info('Current: {stemp:.2f}°C, '
                              'Target: {target_temp:.2f}°C. '
                              '{previousstatus!r} → now is {heater_status!r}.'
@@ -233,7 +229,6 @@ def heartbeat():
                                  target_temp=target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
-
                         lhs[:] = [datetime.datetime.now(),
                                   state.htrstatus,
                                   state.stemp]
