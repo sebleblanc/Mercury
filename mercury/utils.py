@@ -68,7 +68,7 @@ def get_config_file():
     if config_file is None:
         base_path = environ.get('XDG_CONFIG_HOME',
                                 path.expanduser('~/.config'))
-        config_file = path.join(base_path, 'mercury')
+        config_file = path.join(base_path, 'mercury.cfg')
 
     info("Using config file: %s" % config_file)
     return config_file
