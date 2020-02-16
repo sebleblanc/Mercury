@@ -75,25 +75,39 @@ def get_config_file():
 
 
 def load_settings(config_file):
-    with open(config_file, 'r') as f:
-        config = json.load(f)
+    info("Loading settings from %s" % config_file)
+    try:
+        with open(config_file, 'r') as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        error('Config file (%s) does not exist!' % config_file)
+    except ValueError:
+        error('Error parsing config file! (%s)' % config_file)
+    except BaseException:
+        error('Error obtaining configuration settings from %s!'
+              % config_file)
+    else:
+        info("Loaded settings from %s" % config_file)
+        return config
 
-    return config
 
-
-# Save config data
 def save_settings(config, config_file, setpoint):
     '''Save configuration data'''
 
-    savesetpoint = '{0:.2f}'.format(setpoint)
-    saveconfig = copy.copy(config)
-    saveconfig['setpoint'] = savesetpoint
+    setpoint_to_save = '{0:.2f}'.format(setpoint)
 
-    with open(config_file, 'w') as f:
-        json.dump(saveconfig, f)
+    try:
+        saved_config = load_settings(config_file)
+    except BaseException:
+        raise
+    else:
+        config_to_save = copy.copy(saved_config)
+        config_to_save['setpoint'] = setpoint_to_save
 
-    info("Settings saved to %s. Setpoint: %s°C"
-         % (config_file, str(savesetpoint)))
+        with open(config_file, 'w') as f:
+            json.dump(config_to_save, f)
+        info("Settings saved to %s. Setpoint: %s°C"
+             % (config_file, str(setpoint_to_save)))
 
 
 def setup_playtone(speaker_pin, magic_number=600):
