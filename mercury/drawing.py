@@ -24,10 +24,9 @@ def startlcd(state, retry=False):
         lcd.lcd_clear()
         info("Started LCD display.")
         state.drawlist[:] = [True, True, True, True, True]
-    except:
+    except BaseException as e:
         if not retry:
-            error("LCD display init failed.  The program will exit.")
-            state.run = False
+            error("LCD display init failed. (%s)" % e)
         else:
             warning("LCD display init failed.")
             return False

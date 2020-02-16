@@ -164,15 +164,19 @@ def fetchhtrstate(serial):
 
     debug("sending status request (%s) to the heater" % output)
 
-    serial.write(output)
-    sleep(0.1)
-    response = serial.readline()
-    if response != '':
-        st = (struct.unpack('>BBB', response)[0] - 48)
-
+    try:
+        serial.write(output)
+        sleep(0.1)
+        response = serial.readline()
+    except BaseException as e:
+        error("Serial connection error. (%s)" % e)
     else:
-        st = None
-        return
+
+        if response != '':
+            st = (struct.unpack('>BBB', response)[0] - 48)
+        else:
+            st = None
+            return
 
     try:
         htst = HeaterState(st)
@@ -195,6 +199,7 @@ def heartbeat():
     log_thread_start(info, state.threads['hvac'])
 
     while True:
+
         while state.refetch:
             now = monotonic()
             previousstatus = state.htrstatus
@@ -203,8 +208,10 @@ def heartbeat():
 
             try:
                 current_status = fetchhtrstate(state.serial)
-
                 sleep(0.1)
+            except BaseException as e:
+                error("Error fetching heater status. (%s)" % e)
+            else:
 
                 if getstatus is not None:
                     lastfetch = monotonic()
@@ -231,11 +238,7 @@ def heartbeat():
                                   state.htrstatus,
                                   state.stemp]
                 else:
-                    error("Got invalid status: %r" % getstatus)
-
-            except:
-                warning("Failed to contact Arduino!")
-
+                    error("Got no status from heater.")
             finally:
                 state.refetch = False
                 sleep(2)
@@ -649,8 +652,8 @@ def main(config_file, debug, verbose):
 
     try:
         serial = setup_serial()
-    except:
-        error("Could not setup serial device")
+    except BaseException as e:
+        critical("Could not setup serial device. (%s)" % e)
     else:
         state.serial = serial
 
