@@ -46,8 +46,6 @@ class State:
         self.refetch = True
         self.htrstatus = HeaterState.OFF
 
-        self.setpoint = 20
-
         # Defaults
         self.setpoint = 20   # in celsius
         self.sensortimeout = 300
