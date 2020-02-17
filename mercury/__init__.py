@@ -1,5 +1,5 @@
 from __future__ import print_function
-from bme280 import readBME280All
+from bme280 import BME280
 
 from enum import Enum
 from functools import partial
@@ -31,6 +31,8 @@ class State:
     '''Stores all mutable application state'''
 
     def __init__(self):
+        self.bme280 = BME280(1)
+
         self.tt_in = 0
         self.setback = 0
         self.forecast_day = 0
@@ -259,9 +261,9 @@ def smoothsensordata(samples, refresh):
         t, p, h = 0, 0, 0
         now = monotonic()
         try:
-            stemp, spressure, shumidity = readBME280All()
+            stemp, spressure, shumidity = state.bme280.readBME280All()
             for a in range(0, samples):
-                temp, pressure, humidity = readBME280All()
+                temp, pressure, humidity = state.bme280.readBME280All()
 
                 t += temp
                 p += pressure
