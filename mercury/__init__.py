@@ -169,7 +169,7 @@ def fetchhtrstate(serial):
         sleep(0.1)
         response = serial.readline()
     except BaseException as e:
-        error("Serial connection error. (%s)" % e)
+        warning("Serial connection error. (%s)" % e)
     else:
 
         if response != '':
