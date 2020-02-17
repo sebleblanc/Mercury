@@ -280,7 +280,7 @@ def smoothsensordata(samples, refresh):
                   % (stemp, spressure, shumidity))
             sensortime = now
 
-        except:
+        except BaseException:
             warning("Sensor failure")
             if (now - sensortime).total_seconds() >= state.sensortimeout:
                 error("Timed out waiting for sensor data -- exiting!")
@@ -548,7 +548,7 @@ def redraw():
             try:
                 state.lcd.lcd_clear()
                 state.lcd.backlight(0)
-            except:
+            except BaseException:
                 pass
             return
 
