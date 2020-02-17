@@ -75,7 +75,7 @@ def get_config_file():
 
 
 def load_settings(config_file):
-    info("Loading settings from %s" % config_file)
+    debug("Loading settings from %s" % config_file)
     try:
         with open(config_file, 'r') as f:
             config = json.load(f)
