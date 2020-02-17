@@ -136,23 +136,23 @@ def getweather():
                     long = long.capitalize()
                 else:
                     long = ("%s: %s" % (short, long))
-                    shortened_weather = {
-                        'temp': int(owm_weather['main']['temp']),
-                        'feels': int(owm_weather['main']['feels_like']),
-                        'short': str(owm_weather['weather'][0]['main']),
-                        'long': str(long),
-                        'humidity': str(owm_weather['main']['humidity']),
-                        'pressure': str(owm_weather['main']['pressure']),
-                        }
+                shortened_weather = {
+                    'temp': int(owm_weather['main']['temp']),
+                    'feels': int(owm_weather['main']['feels_like']),
+                    'short': str(owm_weather['weather'][0]['main']),
+                    'long': str(long),
+                    'humidity': str(owm_weather['main']['humidity']),
+                    'pressure': str(owm_weather['main']['pressure']),
+                    }
 
-                    if state.latest_weather == shortened_weather:
-                        debug("No weather changes detected.")
-                    else:
-                        state.latest_weather = shortened_weather
-                        info('Updated weather.  Temp: {temp}°C '
-                             '(feels like {feels}°C), {long}, '
-                             'Humidity: {humidity}%, Pressure: {pressure}kPa'
-                             .format(**state.latest_weather))
+                if state.latest_weather == shortened_weather:
+                    debug("No weather changes detected.")
+                else:
+                    state.latest_weather = shortened_weather
+                    info('Updated weather.  Temp: {temp}°C '
+                         '(feels like {feels}°C), {long}, '
+                         'Humidity: {humidity}%, Pressure: {pressure}kPa'
+                         .format(**state.latest_weather))
 
         finally:
             state.drawlist[4] = True
