@@ -189,9 +189,6 @@ def fetchhtrstate(serial):
 
 
 def heartbeat():
-    lhs = state.lhs
-    stemp = state.stemp
-    target_temp = state.target_temp
     heartbeatinterval = state.heartbeatinterval
     drawlist = state.drawlist
     lastfetch = monotonic()
@@ -225,13 +222,13 @@ def heartbeat():
                              'Target: {target_temp:.2f}°C. '
                              '{previousstatus!r} → now is {heater_status!r}.'
                              .format(
-                                 stemp=stemp,
-                                 target_temp=target_temp,
+                                 stemp=state.stemp,
+                                 target_temp=state.target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
-                        lhs[:] = [datetime.datetime.now(),
-                                  state.htrstatus,
-                                  state.stemp]
+                        state.lhs[:] = [datetime.datetime.now(),
+                                        state.htrstatus,
+                                        state.stemp]
                 else:
                     error("Got no status from heater.")
             finally:
