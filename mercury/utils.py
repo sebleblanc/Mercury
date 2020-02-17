@@ -43,7 +43,7 @@ def setup_serial(device='/dev/ttyUSB0', baudrate=9600):
         ser = serial.Serial(device, baudrate, timeout=1)
         info("Heater connected via serial connection.")
 
-    except:
+    except BaseException:
         error("Failed to start serial connection.  The program will exit.")
         raise
 
