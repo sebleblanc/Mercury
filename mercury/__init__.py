@@ -30,8 +30,8 @@ from mercury.utils import (
 class State:
     '''Stores all mutable application state'''
 
-    def __init__(self):
-        self.bme280 = BME280(1)
+    def __init__(self, bme280=None):
+        self.bme280 = bme280 or BME280(1)
 
         self.tt_in = 0
         self.setback = 0
