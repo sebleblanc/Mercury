@@ -26,6 +26,8 @@ from mercury.utils import (
     playtone,
 )
 
+state = None
+
 
 class State:
     '''Stores all mutable application state'''
