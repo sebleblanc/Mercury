@@ -1,5 +1,5 @@
 from __future__ import print_function
-from bme280 import BME280
+from bme280 import Bme280
 
 from datetime import datetime
 from enum import Enum
@@ -33,7 +33,7 @@ class State:
     '''Stores all mutable application state'''
 
     def __init__(self, bme280=None):
-        self.bme280 = bme280 or BME280(1)
+        self.bme280 = bme280 or Bme280(1)
 
         self.tt_in = 0
         self.setback = 0
