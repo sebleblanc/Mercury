@@ -169,17 +169,19 @@ def fetchhtrstate(serial):
     debug("sending status request (%s) to the heater" % output)
 
     try:
+        debug("Writing %s to serial." % output)
         serial.write(output)
         sleep(0.1)
         response = serial.readline()
+        debug("Received response from serial (%s)" % response)
     except BaseException as e:
         warning("Serial connection error. (%s)" % e)
     else:
 
-        if response != '':
+        if len(response) == 3:
             st = (struct.unpack('>BBB', response)[0] - 48)
         else:
-            st = None
+            warning("Unexpected response (%s) from serial." % response)
             return
 
     try:
@@ -204,40 +206,36 @@ def heartbeat():
         while state.refetch:
             now = monotonic()
             previousstatus = state.htrstatus
-            getstatus = -1
             debug("Trying to refetch heater status")
 
-            try:
-                current_status = fetchhtrstate(state.serial)
-                sleep(0.1)
-            except BaseException as e:
-                error("Error fetching heater status. (%s)" % e)
-            else:
+            current_status = fetchhtrstate(state.serial)
+            sleep(0.1)
+            
+            if current_status:
+                lastfetch = monotonic()
 
-                if getstatus is not None:
-                    lastfetch = monotonic()
-
-                    if state.htrstatus == current_status:
-                        debug("no heater state change detected")
-                    else:
-                        drawlist[0] = True
-                        state.htrstatus = current_status
-                        info('Current: {stemp:.2f}°C, '
-                             'Target: {target_temp:.2f}°C. '
-                             '{previousstatus!r} → now is {heater_status!r}.'
-                             .format(
+                if state.htrstatus == current_status:
+                    debug("no heater state change detected")
+                else:
+                    drawlist[0] = True
+                    state.htrstatus = current_status
+                    info('Current: {stemp:.2f}°C, '
+                         'Target: {target_temp:.2f}°C. '
+                         '{previousstatus!r} → now is {heater_status!r}.'
+                         .format(
                                  stemp=state.stemp,
                                  target_temp=state.target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
-                        state.lhs[:] = [datetime.now(),
+                    state.lhs[:] = [datetime.now(),
                                         state.htrstatus,
                                         state.stemp]
-                else:
-                    error("Got no status from heater.")
-            finally:
-                state.refetch = False
-                sleep(2)
+            
+            else:
+                error("Got empty status response from serial.")
+
+            state.refetch = False
+            sleep(2)
 
         while not state.refetch:
             now = monotonic()
