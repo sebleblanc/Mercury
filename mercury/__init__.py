@@ -539,7 +539,7 @@ def redraw():
     while True:
         if not state.toggledisplay:
             try:
-                state.lcd.lcd_clear()
+                state.lcd.clear()
                 state.lcd.backlight(0)
             except BaseException:
                 pass

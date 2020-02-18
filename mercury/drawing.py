@@ -1,4 +1,4 @@
-import I2C_LCD_driver as i2c_charLCD
+from I2C_LCD_driver import LCD
 
 from datetime import datetime
 from logging import error, warning, info, debug
@@ -19,9 +19,9 @@ def get_screen_element_name(i):
 def startlcd(state, retry=False):
     try:
         debug("Starting LCD display...")
-        lcd = i2c_charLCD.lcd()
+        lcd = LCD()
         lcd.backlight(1)
-        lcd.lcd_clear()
+        lcd.clear()
         info("Started LCD display.")
         state.drawlist[:] = [True, True, True, True, True]
     except BaseException as e:
@@ -43,7 +43,7 @@ def displayfail(state):
 
 def draw_heaterstatus(state, lcd):
     state_name = state.htrstatus.pretty_name
-    lcd.lcd_display_string(state_name.ljust(10), 1)
+    lcd.display_string(state_name.ljust(10), 1)
 
 
 def draw_time(state, lcd):
@@ -53,12 +53,12 @@ def draw_time(state, lcd):
         if not state.blinker:
             # blink colon off
             state.blinker = True
-            lcd.lcd_display_string(" ", 1, 17)
+            lcd.display_string(" ", 1, 17)
 
         else:
             # blink colon back on
             state.blinker = False
-            lcd.lcd_display_string(":", 1, 17)
+            lcd.display_string(":", 1, 17)
 
     else:
         state.displayed_time_last_refresh = monotonic()
@@ -68,14 +68,14 @@ def draw_time(state, lcd):
         else:
             localtime = datetime.now().strftime('%H:%M')
 
-        lcd.lcd_display_string(localtime.rjust(10), 1, 10)
+        lcd.display_string(localtime.rjust(10), 1, 10)
 
 
 def draw_temp(state, lcd):
     # tt = '{0:.1f}'.format(state.target_temp) + chr(223) + "C"
     tts = '{0:.1f}'.format(state.setpoint) + chr(223) + "C"
 
-    lcd.lcd_display_string(tts.center(20), 2)
+    lcd.display_string(tts.center(20), 2)
 
 
 def draw_sensor(state, lcd):
@@ -89,8 +89,8 @@ def draw_sensor(state, lcd):
     sensortemperature = '{0:.1f}'.format(sensortemp) + chr(223) + "C"
     sensorhumidity = '{0:.0f}'.format(sensorhumidity) + "%"
 
-    lcd.lcd_display_string(sensortemperature.ljust(6), 3)
-    lcd.lcd_display_string(sensorhumidity.ljust(6), 4)
+    lcd.display_string(sensortemperature.ljust(6), 3)
+    lcd.display_string(sensorhumidity.ljust(6), 4)
 
 
 def draw_weather(state, lcd):
@@ -107,6 +107,6 @@ def draw_weather(state, lcd):
         outhumidity = "---%"
 
     finally:
-        lcd.lcd_display_string(outtemp.rjust(5), 3, 15)
-        lcd.lcd_display_string(cc.ljust(8), 4, 7)
-        lcd.lcd_display_string(outhumidity.rjust(5), 4, 15)
+        lcd.display_string(outtemp.rjust(5), 3, 15)
+        lcd.display_string(cc.ljust(8), 4, 7)
+        lcd.display_string(outhumidity.rjust(5), 4, 15)
