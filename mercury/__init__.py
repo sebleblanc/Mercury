@@ -290,19 +290,20 @@ def smoothsensordata(samples, refresh):
 
 
 def checkschedule():
-    # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
+    ''' Todo: rewrite this so it can have a
+        customizable schedule for tracking away
+        and sleeping time setpoint temperature offset.'''
+
     threads = state.threads
 
     log_thread_start(info, threads['schedule'])
-
+    # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     workdays = range(0, 4)		# workdays
     workhours = range(6, 17)
     customwd = range(4, 5) 		# custom workday(s)
     customwdhrs = range(6, 14)
 
     awaytemp = -1.5
-    sleepingtemp = -0.5
-
     while state.run:
         now = datetime.datetime.now()
         weekday = now.weekday()
@@ -369,19 +370,12 @@ def thermostat():
     info("Starting threads")
     log_thread_start(info, state.threads['thermostat'])
 
-    # minimum threshold (in °C/hour) under which we switch to stage 2
-    stage1min = 0.04
-
-    # maximum threshold (in °C/hour) over which we switch to stage 1
-    stage2max = 0.5
-
     # time (s) to wait before checking if we should change states
     stage1timeout = 10 * 60
 
     # time until forced switch to stage 2
     stage1maxtime = 60 * 60
     stage2timeout = 10 * 60
-    fantimeout = 0
 
     # time we shold hope to stay off for
     idletime = 30 * 60
