@@ -14,7 +14,7 @@ import signal
 import struct
 import requests
 
-from mercury import drawing, gpio
+from mercury import drawing, gpio, schedule
 from mercury.utils import (
     try_function,
     setup_logging,
@@ -287,44 +287,6 @@ def smoothsensordata(samples, refresh):
         finally:
             state.drawlist[3] = True
             sleep(5)
-
-
-def checkschedule():
-    ''' Todo: rewrite this so it can have a
-        customizable schedule for tracking away
-        and sleeping time setpoint temperature offset.'''
-
-    threads = state.threads
-
-    log_thread_start(info, threads['schedule'])
-    # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
-    workdays = range(0, 4)		# workdays
-    workhours = range(6, 17)
-    customwd = range(4, 5) 		# custom workday(s)
-    customwdhrs = range(6, 14)
-
-    awaytemp = -1.5
-    while state.run:
-        now = datetime.datetime.now()
-        weekday = now.weekday()
-        hour = now.hour + 1		# react an hour in advance
-
-        if weekday in workdays:
-            whrs = workhours
-        elif weekday in customwd:
-            whrs = customwdhrs
-        else:
-            whrs = []
-            state.setback = 0
-        if hour in whrs:
-            state.setback = awaytemp
-        elif hour + 1 in whrs:		# temp boost in the morning
-            state.setback = 1
-        else:
-            state.setback = 0
-        state.target_temp = state.setpoint + state.setback
-        state.drawlist[2] = True
-        sleep(300)
 
 
 def htrtoggle(st):
@@ -657,7 +619,7 @@ def main(config_file, debug, verbose):
 
     state.threads = {
         "hvac": Thread(name='hvac', target=heartbeat),
-        "schedule": Thread(name='schedule', target=checkschedule),
+        "schedule": Thread(name='schedule', target=schedule.checkschedule),
         "sensor": Thread(name='sensor', target=smoothsensordata,
                          args=(3, 10)),  # (no. of samples, period time)
         "thermostat": Thread(name='thermostat', target=thermostat),
