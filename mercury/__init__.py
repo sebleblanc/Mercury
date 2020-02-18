@@ -619,7 +619,8 @@ def main(config_file, debug, verbose):
 
     state.threads = {
         "hvac": Thread(name='hvac', target=heartbeat),
-        "schedule": Thread(name='schedule', target=schedule.checkschedule),
+        "schedule": Thread(name='schedule', target=schedule.checkschedule,
+                           kwargs={'state': state}),
         "sensor": Thread(name='sensor', target=smoothsensordata,
                          args=(3, 10)),  # (no. of samples, period time)
         "thermostat": Thread(name='thermostat', target=thermostat),
