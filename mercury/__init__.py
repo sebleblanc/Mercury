@@ -19,7 +19,7 @@ from mercury.utils import (
     try_function,
     setup_logging,
     setup_serial,
-    log_thread_start,
+    logged_thread_start,
     get_config_file,
     load_settings,
     save_settings,
@@ -94,6 +94,7 @@ def handler_stop_signals(signum, frame):
     state.run = False
 
 
+@logged_thread_start
 def getweather():
     '''Retrieve weather from OpenWeatherMap'''
 
@@ -106,8 +107,6 @@ def getweather():
     owm_url = base_owm_url.format(key=weatherapikey,
                                   loc=locationid,
                                   units='metric')
-
-    log_thread_start(info, state.threads['weather'])
 
     while True:
 
@@ -192,12 +191,11 @@ def fetchhtrstate(serial):
         return htst
 
 
+@logged_thread_start
 def heartbeat():
     heartbeatinterval = state.heartbeatinterval
     drawlist = state.drawlist
     lastfetch = monotonic()
-
-    log_thread_start(info, state.threads['hvac'])
 
     while True:
 
@@ -249,13 +247,11 @@ def heartbeat():
                 sleep(2)
 
 
+@logged_thread_start
 def smoothsensordata(samples, refresh):
     '''Average out sensor readings. Takes number of samples over a period
     of time (refresh)
     '''
-    threads = state.threads
-
-    log_thread_start(info, threads['sensor'])
 
     sensortime = monotonic()
 
@@ -326,13 +322,11 @@ def htrtoggle(st):
                   % (state.htrstatus, HeaterState(st)))
 
 
+@logged_thread_start
 def thermostat():
     lhs = state.lhs
 
     threads = state.threads
-
-    info("Starting threads")
-    log_thread_start(info, state.threads['thermostat'])
 
     # time (s) to wait before checking if we should change states
     stage1timeout = 10 * 60
@@ -494,11 +488,9 @@ def drawstatus(element):
         try_draw(drawing.draw_weather)
 
 
+@logged_thread_start
 def redraw():
     drawlist = state.drawlist
-    threads = state.threads
-
-    log_thread_start(info, threads['display'])
 
     while True:
         if not state.toggledisplay:
@@ -527,11 +519,9 @@ def redraw():
         sleep(state.refreshrate)
 
 
+@logged_thread_start
 def ui_input():
-    threads = state.threads
     drawlist = state.drawlist
-
-    log_thread_start(info, threads['ui_input'])
 
     while True:
         if state.tt_in != 0:

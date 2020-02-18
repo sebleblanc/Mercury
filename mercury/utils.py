@@ -7,8 +7,10 @@ import logging
 import serial
 import time
 
+from functools import wraps
 from logging import critical, error, warning, info, debug
 from os import environ, path
+from threading import current_thread as get_current_thread
 
 
 def try_function(on_failure, method, *args, **kwargs):
@@ -52,9 +54,16 @@ def setup_serial(device='/dev/ttyUSB0', baudrate=9600):
         return ser
 
 
-def log_thread_start(func, thread):
-    func("Started thread %s [%s]."
-         % (thread.name, thread.native_id))
+def logged_thread_start(func):
+    thread = get_current_thread()
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        info("Started thread %s [%s]."
+             % (thread.name, thread.native_id))
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def get_config_file():
