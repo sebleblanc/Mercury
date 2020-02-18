@@ -1,6 +1,7 @@
 from __future__ import print_function
 from bme280 import BME280
 
+from datetime import datetime
 from enum import Enum
 from functools import partial
 from logging import critical, error, warning, info, debug
@@ -9,7 +10,6 @@ from time import monotonic, sleep
 from threading import Thread
 
 import click
-import datetime
 import signal
 import struct
 import requests
@@ -228,7 +228,7 @@ def heartbeat():
                                  target_temp=state.target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
-                        state.lhs[:] = [datetime.datetime.now(),
+                        state.lhs[:] = [datetime.now(),
                                         state.htrstatus,
                                         state.stemp]
                 else:
@@ -305,7 +305,7 @@ def checkschedule():
 
     awaytemp = -1.5
     while state.run:
-        now = datetime.datetime.now()
+        now = datetime.now()
         weekday = now.weekday()
         hour = now.hour + 1		# react an hour in advance
 
@@ -398,7 +398,7 @@ def thermostat():
     debug("Got hvac status: %s" % state.htrstatus)
 
     # endtime, last state, last temp
-    lhs[:] = [datetime.datetime.now(), state.htrstatus, state.stemp]
+    lhs[:] = [datetime.now(), state.htrstatus, state.stemp]
 
     threads['schedule'].start()
     threads['weather'].start()
@@ -410,7 +410,7 @@ def thermostat():
                                      '{0:.1f}'.format(state.stemp)))
 
     while state.run:
-        now = datetime.datetime.now()
+        now = datetime.now()
         tdelta = now - state.lhs[0]
         seconds = tdelta.total_seconds()
         lasttime = lhs[0]
