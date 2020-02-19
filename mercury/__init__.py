@@ -1,5 +1,4 @@
 from __future__ import print_function
-from bme280 import Bme280
 
 from datetime import datetime
 from enum import Enum
@@ -9,6 +8,7 @@ from math import floor
 from time import monotonic, sleep
 from threading import Thread
 
+import bme280
 import click
 import signal
 import struct
@@ -32,8 +32,8 @@ state = None
 class State:
     '''Stores all mutable application state'''
 
-    def __init__(self, bme280=None):
-        self.bme280 = bme280 or Bme280(1)
+    def __init__(self):
+        self.bme280 = bme280.Bme280(1)
 
         self.tt_in = 0
         self.setback = 0
@@ -257,6 +257,7 @@ def smoothsensordata(samples, refresh):
         t, p, h = 0, 0, 0
         now = monotonic()
         try:
+            state.bme280.set_mode(bme280.MODE_FORCED)
             stemp, spressure, shumidity = state.bme280.get_data()
             for a in range(0, samples):
                 temp, pressure, humidity = state.bme280.get_data()
