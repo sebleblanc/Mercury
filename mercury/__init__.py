@@ -340,8 +340,6 @@ def thermostat():
 
     threads['display'].start()
     threads['hvac'].start()
-
-    state.stemp = False
     threads['sensor'].start()
 
     debug("Waiting for sensor data...")
