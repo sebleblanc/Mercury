@@ -55,10 +55,9 @@ def setup_serial(device='/dev/ttyUSB0', baudrate=9600):
 
 
 def logged_thread_start(func):
-    thread = get_current_thread()
-
     @wraps(func)
     def wrapper(*args, **kwargs):
+        thread = get_current_thread()
         info("Started thread %s [%s]."
              % (thread.name, thread.native_id))
         return func(*args, **kwargs)
