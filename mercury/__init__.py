@@ -208,7 +208,7 @@ def heartbeat():
 
             current_status = fetchhtrstate(state.serial)
             sleep(0.1)
-            
+
             if current_status:
                 lastfetch = monotonic()
 
@@ -225,10 +225,12 @@ def heartbeat():
                                  target_temp=state.target_temp,
                                  previousstatus=previousstatus.pretty_name,
                                  heater_status=state.htrstatus.pretty_name))
-                    state.lhs[:] = [datetime.now(),
-                                        state.htrstatus,
-                                        state.stemp]
-            
+                    state.lhs[:] = [
+                                    datetime.now(),
+                                    state.htrstatus,
+                                    state.stemp,
+                                    ]
+
             else:
                 error("Got empty status response from serial.")
 
