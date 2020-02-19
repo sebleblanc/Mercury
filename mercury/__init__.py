@@ -252,12 +252,12 @@ def smoothsensordata(samples, refresh):
     '''
 
     sensortime = monotonic()
+    state.bme280.set_mode(bme280.MODE_FORCED)
 
     while state.run:
         t, p, h = 0, 0, 0
         now = monotonic()
         try:
-            state.bme280.set_mode(bme280.MODE_FORCED)
             stemp, spressure, shumidity = state.bme280.get_data()
             for a in range(0, samples):
                 temp, pressure, humidity = state.bme280.get_data()
