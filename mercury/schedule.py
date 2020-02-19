@@ -2,17 +2,15 @@ from datetime import datetime
 from logging import info
 from time import sleep
 
-from mercury.utils import log_thread_start
+from mercury.utils import logged_thread_start
 
 
+@logged_thread_start
 def checkschedule(state):
     ''' Todo: rewrite this so it can have a
         customizable schedule for tracking away
         and sleeping time setpoint temperature offset.'''
 
-    threads = state.threads
-
-    log_thread_start(info, threads['schedule'])
     # 0:MON 1:TUE 2:WED 3:THU 4:FRI 5:SAT 6:SUN
     workdays = range(0, 4)		# workdays
     workhours = range(6, 17)
