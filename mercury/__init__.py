@@ -154,7 +154,7 @@ def getweather():
                     state.latest_weather = shortened_weather
                     info('Updated weather.  Temp: {temp}°C '
                          '(feels like {feels}°C), {long}, '
-                         'Humidity: {humidity}%, Pressure: {pressure}kPa'
+                         'Humidity: {humidity}%, Pressure: {pressure}hPa'
                          .format(**state.latest_weather))
 
         finally:
@@ -274,7 +274,7 @@ def smoothsensordata(samples, refresh):
             state.spressure = p / samples
             state.shumidity = h / samples
 
-            debug("Got sensor data: %s°C, %skPa, %s%%"
+            debug("Got sensor data: %s°C, %shPa, %s%%"
                   % (stemp, spressure, shumidity))
             sensortime = now
 
