@@ -1,5 +1,5 @@
 from datetime import datetime
-from logging import info
+from logging import debug
 from time import sleep
 
 from mercury.utils import logged_thread_start
@@ -25,17 +25,26 @@ def checkschedule(state):
 
         if weekday in workdays:
             whrs = workhours
+            debug("Today is a regular workday")
         elif weekday in customwd:
             whrs = customwdhrs
+            debug("Today is a special workday")
         else:
             whrs = []
             state.setback = 0
         if hour in whrs:
             state.setback = awaytemp
-        elif hour + 1 in whrs:		# temp boost in the morning
+            debug("User is away, offsetting setpoint by %d°C."
+                  % state.setback)
+        elif hour + 1 in whrs:
             state.setback = 1
+            debug("User is getting ready for work,"
+                  "offsetting setpoint by %d°C."
+                  % state.setback)
         else:
             state.setback = 0
+            debug("User is home, not offsetting setpoint.")
         state.target_temp = state.setpoint + state.setback
+        debug("Actual target temperature is %d." % state.target_temp)
         state.drawlist[2] = True
         sleep(300)

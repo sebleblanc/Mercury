@@ -41,8 +41,8 @@ def setup_gpio(inputs=_DEFAULT, outputs=_DEFAULT):
         for x in outputs:
             GPIO.setup(outputs[x], GPIO.OUT)
 
-    except:
-        critical('GPIO init failed.  The program will exit.')
+    except BaseException as e:
+        critical('GPIO init failed. (%s) The program will exit.' % e)
         raise
 
     # Inputs

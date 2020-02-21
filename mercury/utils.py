@@ -88,7 +88,7 @@ def load_settings(config_file):
         with open(config_file, 'r') as f:
             config = json.load(f)
     except FileNotFoundError:
-        error('Config file (%s) does not exist!' % config_file)
+        warning('Config file (%s) does not exist!' % config_file)
     except ValueError:
         error('Error parsing config file! (%s)' % config_file)
     except BaseException:
@@ -106,8 +106,8 @@ def save_settings(config, config_file, setpoint):
 
     try:
         saved_config = load_settings(config_file)
-    except BaseException:
-        raise
+    except BaseException as e:
+        error("Could not load config data. (%s.) Not saving config." % e)
     else:
         config_to_save = copy.copy(saved_config)
         config_to_save['setpoint'] = setpoint_to_save
@@ -124,7 +124,7 @@ def setup_playtone(speaker_pin, magic_number=600):
 
         p = GPIO.PWM(speaker_pin, magic_number)
         p.start(0)
-    except:
+    except BaseException:
         critical('Could not initialize PWM')
         raise
 
