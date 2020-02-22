@@ -613,7 +613,7 @@ def main(config_file, debug, verbose):
         "schedule": Thread(name='schedule', target=schedule.checkschedule,
                            kwargs={'state': state}),
         "sensor": Thread(name='sensor', target=smoothsensordata,
-                         args=(3, 10)),  # (no. of samples, period time)
+                         args=(5, 30)),  # (no. of samples, period time)
         "thermostat": Thread(name='thermostat', target=thermostat),
         "ui_input": Thread(name='ui_input', target=ui_input),
         "display": Thread(name='display', target=redraw),
