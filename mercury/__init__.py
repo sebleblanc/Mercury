@@ -15,14 +15,16 @@ import struct
 import requests
 
 from mercury import drawing, gpio, schedule
+from mercury.config import (
+    get_config_file,
+    load_settings,
+    save_settings,
+)
 from mercury.utils import (
     try_function,
     setup_logging,
     setup_serial,
     logged_thread_start,
-    get_config_file,
-    load_settings,
-    save_settings,
     playtone,
 )
 
