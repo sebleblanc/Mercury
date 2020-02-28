@@ -98,64 +98,70 @@ def handler_stop_signals(signum, frame):
 def getweather():
     '''Retrieve weather from OpenWeatherMap'''
 
-    weatherapikey = state.weatherapikey
-    locationid = state.locationid
-    base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
-                    '?appid={key}'
-                    '&id={loc}'
-                    '&units={units}')
-    owm_url = base_owm_url.format(key=weatherapikey,
-                                  loc=locationid,
-                                  units='metric')
-
-    while True:
-
+    while (
+           state.run and
+           state.config.has_option('User', 'WeatherApiKey') and
+           state.config.has_option('User', 'LocationId')
+           ):
         next_check_seconds = 1800
 
-        debug("checking weather data using %s" % owm_url)
-
         try:
-            response = requests.get(owm_url)
-            debug("Got reponse '%s' from OpenWeatherMap" % response)
-            owm_weather = response.json()
-            debug("OpenWeatherMap object: %s" % owm_weather)
+            api_key = state.config['User']['WeatherApiKey']
+            location_id = state.config['User']['LocationId']
+            base_owm_url = ('http://api.openweathermap.org/data/2.5/weather'
+                            '?appid={key}'
+                            '&id={loc}'
+                            '&units={units}')
+            owm_url = base_owm_url.format(key=api_key,
+                                          loc=location_id,
+                                          units='metric')
         except BaseException as e:
-            warning("Weather retrieval failure. (%s)" % e)
-            state.latest_weather = None
-            next_check_seconds = 60
+            error('Invalid weather api data in config. (%s)' % e)
         else:
+            debug("checking weather data using %s" % owm_url)
 
             try:
-                short = owm_weather['weather'][0]['main']
-                long = owm_weather['weather'][0]['description']
-            except BaseException:
-                warning("Invalid weather object. (%s)" % owm_weather)
+                response = requests.get(owm_url)
+                debug("Got reponse '%s' from OpenWeatherMap" % response)
+                owm_weather = response.json()
+                debug("OpenWeatherMap object: %s" % owm_weather)
+            except BaseException as e:
+                warning("Weather retrieval failure. (%s)" % e)
+                state.latest_weather = None
                 next_check_seconds = 60
             else:
 
-                if long.lower() == short.lower():
-                    long = short
-                elif short.lower() in long.lower():
-                    long = long.capitalize()
+                try:
+                    short = owm_weather['weather'][0]['main']
+                    long = owm_weather['weather'][0]['description']
+                except BaseException:
+                    warning("Invalid weather object. (%s)" % owm_weather)
+                    next_check_seconds = 60
                 else:
-                    long = ("%s: %s" % (short, long))
-                shortened_weather = {
-                    'temp': int(owm_weather['main']['temp']),
-                    'feels': int(owm_weather['main']['feels_like']),
-                    'short': str(owm_weather['weather'][0]['main']),
-                    'long': str(long),
-                    'humidity': str(owm_weather['main']['humidity']),
-                    'pressure': str(owm_weather['main']['pressure']),
-                    }
 
-                if state.latest_weather == shortened_weather:
-                    debug("No weather changes detected.")
-                else:
-                    state.latest_weather = shortened_weather
-                    info('Updated weather.  Temp: {temp}°C '
-                         '(feels like {feels}°C), {long}, '
-                         'Humidity: {humidity}%, Pressure: {pressure}hPa'
-                         .format(**state.latest_weather))
+                    if long.lower() == short.lower():
+                        long = short
+                    elif short.lower() in long.lower():
+                        long = long.capitalize()
+                    else:
+                        long = ("%s: %s" % (short, long))
+                    shortened_weather = {
+                        'temp': int(owm_weather['main']['temp']),
+                        'feels': int(owm_weather['main']['feels_like']),
+                        'short': str(owm_weather['weather'][0]['main']),
+                        'long': str(long),
+                        'humidity': str(owm_weather['main']['humidity']),
+                        'pressure': str(owm_weather['main']['pressure']),
+                        }
+
+                    if state.latest_weather == shortened_weather:
+                        debug("No weather changes detected.")
+                    else:
+                        state.latest_weather = shortened_weather
+                        info('Updated weather.  Temp: {temp}°C '
+                             '(feels like {feels}°C), {long}, '
+                             'Humidity: {humidity}%, Pressure: {pressure}hPa'
+                             .format(**state.latest_weather))
 
         finally:
             state.drawlist[4] = True
@@ -572,24 +578,9 @@ def main(config_file, debug, verbose):
     signal.signal(signal.SIGINT, handler_stop_signals)
     signal.signal(signal.SIGTERM, handler_stop_signals)
 
-    try:
-        config = load_settings(config_file)
-        state.config = config
-    except BaseException:
-        config = {
-                  'setpoint': state.setpoint,
-                  'weatherapikey': "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-                  'locationid': "1234567"}
+    state.config = load_settings(config_file)
 
-    try:
-        state.setpoint = float(config['setpoint'])
-        state.weatherapikey = config['weatherapikey']
-        state.locationid = config['locationid']
-    except KeyError as e:
-        error('Invalid configuration file, missing key %s'
-              % e.args[0])
-    except BaseException as e:
-        error('Problem with configuration file. (%s)' % e)
+    state.setpoint = state.config.getfloat('User', 'Setpoint')
 
     try:
         serial = setup_serial()

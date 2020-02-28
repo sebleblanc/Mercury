@@ -1,12 +1,11 @@
 from RPi import GPIO
 
 import atexit
-import copy
-import json
 import logging
 import serial
 import time
 
+from configparser import ConfigParser
 from functools import wraps
 from logging import critical, error, warning, info, debug
 from os import environ, path
@@ -83,39 +82,42 @@ def get_config_file():
 
 
 def load_settings(config_file):
-    debug("Loading settings from %s" % config_file)
-    try:
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-    except FileNotFoundError:
-        warning('Config file (%s) does not exist!' % config_file)
-    except ValueError:
-        error('Error parsing config file! (%s)' % config_file)
-    except BaseException:
-        error('Error obtaining configuration settings from %s!'
-              % config_file)
+    config_defaults = {'Setpoint': '20'}
+    config = ConfigParser(defaults=config_defaults)
+    default_setpoint = config['DEFAULT']['Setpoint']
+
+    if path.isfile(config_file):
+        debug("Loading settings from %s..." % config_file)
+        config.read(config_file)
     else:
-        info("Loaded settings from %s" % config_file)
-        return config
+        warning("Config file not found.")
+
+    if not config.has_section('User'):
+        config.add_section('User')
+    if not config.has_option('User', 'Setpoint'):
+        config.set('User', 'Setpoint', default_setpoint)
+
+    try:
+        config.getfloat('User', 'setpoint')
+    except BaseException as e:
+        error("Invalid setpoint value in config file. (%s)"
+              % e)
+        config.set('User', 'Setpoint', default_setpoint)
+    return config
 
 
 def save_settings(config, config_file, setpoint):
     '''Save configuration data'''
 
-    setpoint_to_save = '{0:.2f}'.format(setpoint)
+    setpoint_float = '{0:.2f}'.format(setpoint)
+    setpoint_to_save = str(setpoint_float)
 
-    try:
-        saved_config = load_settings(config_file)
-    except BaseException as e:
-        error("Could not load config data. (%s.) Not saving config." % e)
-    else:
-        config_to_save = copy.copy(saved_config)
-        config_to_save['setpoint'] = setpoint_to_save
+    config['User']['Setpoint'] = setpoint_to_save
 
-        with open(config_file, 'w') as f:
-            json.dump(config_to_save, f)
-        info("Settings saved to %s. Setpoint: %s°C"
-             % (config_file, str(setpoint_to_save)))
+    with open(config_file, 'w') as f:
+        config.write(f)
+    info("Settings saved to %s. Setpoint: %s°C"
+         % (config_file, setpoint_to_save))
 
 
 def setup_playtone(speaker_pin, magic_number=600):
